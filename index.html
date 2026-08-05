@@ -43,6 +43,43 @@
     }
   }
 
+  /* override manual (checkbox Dark mode) -- el selector con atributo pesa más que el :root
+     plano de arriba, así gana sin importar la preferencia de color del sistema operativo */
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --surface-2:      #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-1:       #4a3aa7;
+    --series-2:       #008300;
+    --good:           #0ca30c;
+    --critical:       #d03b3b;
+    --highlight-bg:   rgba(74,58,167,0.14);
+    --funnel-1: #c3b6ec; --funnel-2: #9f8bdd; --funnel-3: #4a3aa7; --funnel-4: #3c2f89; --funnel-5: #241c52;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --surface-2:      #0d0d0d;
+    --text-primary:   #E6C301;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --series-1:       #9085e9;
+    --series-2:       #008300;
+    --good:           #0ca30c;
+    --critical:       #e66767;
+    --highlight-bg:   rgba(144,133,233,0.22);
+    --funnel-1: #241c52; --funnel-2: #3c2f89; --funnel-3: #9085e9; --funnel-4: #9f8bdd; --funnel-5: #c3b6ec;
+  }
+
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -236,6 +273,12 @@
       <label>&nbsp;</label>
       <label class="compare-toggle">
         <input type="checkbox" id="f-compare"> Compare
+      </label>
+    </div>
+    <div class="filter-group">
+      <label>&nbsp;</label>
+      <label class="compare-toggle">
+        <input type="checkbox" id="f-dark-mode"> Dark mode
       </label>
     </div>
     <div class="filter-group" id="compare-mode-group" style="display:none;">
@@ -434,6 +477,33 @@ const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'reach', 'frequency', 'bounceR
 
 let UNIFIED = []; // flat rows at Date x Account x Campaign x AdSet x Ad grain
 let charts = {};
+
+// ===================== THEME =====================
+// Checkbox "Dark mode" en los filtros pisa la preferencia del sistema (prefers-color-scheme)
+// vía el atributo data-theme en <html>, persistido en localStorage entre visitas.
+const THEME_KEY = 'ssw-dashboard-theme';
+
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem(THEME_KEY, theme);
+}
+
+function initTheme() {
+  const stored = localStorage.getItem(THEME_KEY);
+  const theme = (stored === 'dark' || stored === 'light')
+    ? stored
+    : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  setTheme(theme);
+  document.getElementById('f-dark-mode').checked = theme === 'dark';
+}
+initTheme();
+
+document.getElementById('f-dark-mode').addEventListener('change', (e) => {
+  setTheme(e.target.checked ? 'dark' : 'light');
+  // Chart.js lee los colores de las CSS vars al crear el canvas, no reactivamente --
+  // hay que re-renderear para que los charts tomen la paleta nueva
+  renderAll();
+});
 
 // ===================== GVIZ FETCH =====================
 
