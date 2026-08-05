@@ -1093,11 +1093,14 @@ function renderAll() {
 function setupDateFilters() {
   const dates = uniqueSorted(UNIFIED.map(r => r.date));
   const min = dates[0], max = dates[dates.length - 1];
+  // por defecto, últimos 14 días con data -- el usuario sigue pudiendo elegir fechas
+  // más viejas manualmente, min/max del input cubren todo el historial igual
+  const defaultFrom = shiftDate(max, -13) < min ? min : shiftDate(max, -13);
   const fromEl = document.getElementById('f-date-from');
   const toEl = document.getElementById('f-date-to');
-  fromEl.min = min; fromEl.max = max; fromEl.value = min;
+  fromEl.min = min; fromEl.max = max; fromEl.value = defaultFrom;
   toEl.min = min; toEl.max = max; toEl.value = max;
-  filterState.dateFrom = min; filterState.dateTo = max;
+  filterState.dateFrom = defaultFrom; filterState.dateTo = max;
   fromEl.addEventListener('change', () => { filterState.dateFrom = fromEl.value; renderAll(); });
   toEl.addEventListener('change', () => { filterState.dateTo = toEl.value; renderAll(); });
 }
