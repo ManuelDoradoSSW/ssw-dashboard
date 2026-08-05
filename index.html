@@ -20,6 +20,7 @@
     --series-2:       #008300; /* green -- cost per real mql (branding SSW) */
     --good:           #0ca30c;
     --critical:       #d03b3b;
+    --highlight-bg:   rgba(74,58,167,0.14);
     --funnel-1: #c3b6ec; --funnel-2: #9f8bdd; --funnel-3: #4a3aa7; --funnel-4: #3c2f89; --funnel-5: #241c52;
   }
   @media (prefers-color-scheme: dark) {
@@ -37,6 +38,7 @@
       --series-2:       #008300;
       --good:           #0ca30c;
       --critical:       #e66767;
+      --highlight-bg:   rgba(144,133,233,0.22);
       --funnel-1: #241c52; --funnel-2: #3c2f89; --funnel-3: #9085e9; --funnel-4: #9f8bdd; --funnel-5: #c3b6ec;
     }
   }
@@ -72,6 +74,13 @@
     border-radius: 10px;
     padding: 20px;
     margin-bottom: 24px;
+  }
+
+  #filters-card {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.12);
   }
 
   /* ---- filters bar ---- */
@@ -150,6 +159,12 @@
   td { border-bottom: 1px solid var(--gridline); color: var(--text-secondary); font-weight: 700; }
   .creative-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; display: block; }
   tr:hover td { color: var(--text-primary); }
+  tr.row-highlighted td,
+  tr.row-highlighted td:first-child,
+  tr.row-highlighted td:nth-child(2) {
+    background: var(--highlight-bg);
+    color: var(--text-primary);
+  }
   .table-scroll { max-height: 480px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
   .table-meta { color: var(--text-muted); font-size: 12px; margin-top: 8px; font-weight: 700; }
 
@@ -181,13 +196,24 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card" id="filters-card">
   <div class="filters">
     <div class="filter-group">
+      <label>Date range</label>
+      <select id="f-date-preset">
+        <option value="last7">Last 7 days</option>
+        <option value="last30">Last 30 days</option>
+        <option value="thisMonth">This Month</option>
+        <option value="lastMonth">Last Month</option>
+        <option value="ytd">Year to date</option>
+        <option value="custom">Custom</option>
+      </select>
+    </div>
+    <div class="filter-group" id="custom-date-from-group" style="display:none;">
       <label>From</label>
       <input type="date" id="f-date-from">
     </div>
-    <div class="filter-group">
+    <div class="filter-group" id="custom-date-to-group" style="display:none;">
       <label>To</label>
       <input type="date" id="f-date-to">
     </div>
@@ -385,7 +411,10 @@ const METRIC_OPTIONS = [
   { key: 'reach', label: 'Reach', fmt: 'int' },
   { key: 'frequency', label: 'Frequency', fmt: 'dec' },
   { key: 'hookRate', label: 'Hook Rate', fmt: 'pct' },
-  { key: 'bounceRate', label: 'Bounce Rate', fmt: 'pct' }
+  { key: 'bounceRate', label: 'Bounce Rate', fmt: 'pct' },
+  { key: 'mqlYes', label: 'Real MQL', fmt: 'int' },
+  { key: 'mqlNo', label: 'Spam', fmt: 'int' },
+  { key: 'cpsch', label: 'Cost per Real MQL', fmt: 'money' }
 ];
 
 // para el gráfico de Spend/CPSCH -- compute() trabaja sobre las sumas crudas de un bucket
@@ -588,7 +617,7 @@ function mergeSources(metaRows, phRows, icRows) {
 // ===================== FILTER UI =====================
 
 const filterState = {
-  dateFrom: null, dateTo: null, account: new Set(), campaign: new Set(), adset: new Set(),
+  dateFrom: null, dateTo: null, datePreset: 'last30', account: new Set(), campaign: new Set(), adset: new Set(),
   compare: false, compareMode: 'previous', compareCustomFrom: null, compareCustomTo: null
 };
 
@@ -685,6 +714,38 @@ function shiftDate(dateStr, n) {
   const d = new Date(dateStr + 'T00:00:00Z');
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().substring(0, 10);
+}
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+function clampDate(d, min, max) { return d < min ? min : d > max ? max : d; }
+
+function startOfMonth(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-01';
+}
+function startOfYear(dateStr) {
+  return dateStr.substring(0, 4) + '-01-01';
+}
+function prevMonthRange(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const y = d.getUTCFullYear(), m = d.getUTCMonth();
+  const lastDayPrevMonth = new Date(Date.UTC(y, m, 0));
+  const firstDayPrevMonth = new Date(Date.UTC(y, m - 1, 1));
+  return { from: firstDayPrevMonth.toISOString().substring(0, 10), to: lastDayPrevMonth.toISOString().substring(0, 10) };
+}
+
+// mapea cada preset del selector de fechas a un rango concreto, acotado siempre
+// al min/max de datos disponibles en UNIFIED (nunca se sale del rango con data real)
+function computePresetRange(preset, min, max) {
+  if (preset === 'last7') return { from: clampDate(shiftDate(max, -6), min, max), to: max };
+  if (preset === 'last30') return { from: clampDate(shiftDate(max, -29), min, max), to: max };
+  if (preset === 'thisMonth') return { from: clampDate(startOfMonth(max), min, max), to: max };
+  if (preset === 'lastMonth') {
+    const r = prevMonthRange(max);
+    return { from: clampDate(r.from, min, max), to: clampDate(r.to, min, max) };
+  }
+  if (preset === 'ytd') return { from: clampDate(startOfYear(max), min, max), to: max };
+  return null; // custom -- se maneja aparte, usando los inputs from/to directamente
 }
 
 // ===================== FORMATTING =====================
@@ -918,6 +979,7 @@ function baseChartOptions(grid, muted, tooltipFmt) {
 // ===================== RENDER: CREATIVE TABLE =====================
 
 let tableSortKey = 'spend', tableSortDir = -1;
+let highlightedAd = null; // ad seleccionado desde un click en el scatter -- resaltado en esta tabla
 
 function renderCreativeTable(rows) {
   const agg = aggregateByAd(rows);
@@ -929,7 +991,7 @@ function renderCreativeTable(rows) {
 
   const tbody = document.getElementById('creative-table-body');
   tbody.innerHTML = agg.map(r => `
-    <tr>
+    <tr class="${r.ad === highlightedAd ? 'row-highlighted' : ''}">
       <td>${r.thumbnailUrl ? `<a href="${escapeHtml(r.thumbnailUrl)}" target="_blank" rel="noopener"><img class="creative-thumb" src="${escapeHtml(r.thumbnailUrl)}" alt=""></a>` : ''}</td>
       <td>${escapeHtml(r.ad)}</td>
       <td>${escapeHtml(r.account)}</td>
@@ -1034,6 +1096,14 @@ function renderScatter(rows) {
     },
     options: {
       responsive: true, maintainAspectRatio: false,
+      onClick: (evt, elements) => {
+        if (!elements.length) return;
+        const point = agg[elements[0].index];
+        if (point) highlightAndScrollToAd(point.ad);
+      },
+      onHover: (evt, elements) => {
+        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -1051,6 +1121,20 @@ function renderScatter(rows) {
       }
     }
   });
+}
+
+// click en un punto del scatter -- lo resalta en Creative Performance y hace scroll hasta ahí,
+// restando la altura de la barra de filtros (sticky) para que no tape el header de la tabla
+function highlightAndScrollToAd(adName) {
+  highlightedAd = adName;
+  renderCreativeTable(getFilteredRows());
+  const tableCard = document.getElementById('creative-table').closest('.card');
+  const stickyBar = document.getElementById('filters-card');
+  const offset = (stickyBar ? stickyBar.getBoundingClientRect().height : 0) + 16;
+  const top = tableCard.getBoundingClientRect().top + window.scrollY - offset;
+  window.scrollTo({ top, behavior: 'smooth' });
+  const row = document.querySelector('#creative-table tbody tr.row-highlighted');
+  if (row) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
 // ===================== RENDER: FUNNEL =====================
@@ -1090,19 +1174,45 @@ function renderAll() {
   renderFunnel(rows);
 }
 
+let dataMinDate = null, dataMaxDate = null;
+
 function setupDateFilters() {
   const dates = uniqueSorted(UNIFIED.map(r => r.date));
-  const min = dates[0], max = dates[dates.length - 1];
-  // por defecto, últimos 14 días con data -- el usuario sigue pudiendo elegir fechas
-  // más viejas manualmente, min/max del input cubren todo el historial igual
-  const defaultFrom = shiftDate(max, -13) < min ? min : shiftDate(max, -13);
+  dataMinDate = dates[0]; dataMaxDate = dates[dates.length - 1];
+
   const fromEl = document.getElementById('f-date-from');
   const toEl = document.getElementById('f-date-to');
-  fromEl.min = min; fromEl.max = max; fromEl.value = defaultFrom;
-  toEl.min = min; toEl.max = max; toEl.value = max;
-  filterState.dateFrom = defaultFrom; filterState.dateTo = max;
+  fromEl.min = dataMinDate; fromEl.max = dataMaxDate;
+  toEl.min = dataMinDate; toEl.max = dataMaxDate;
   fromEl.addEventListener('change', () => { filterState.dateFrom = fromEl.value; renderAll(); });
   toEl.addEventListener('change', () => { filterState.dateTo = toEl.value; renderAll(); });
+
+  const presetEl = document.getElementById('f-date-preset');
+  presetEl.value = filterState.datePreset;
+  presetEl.addEventListener('change', () => applyDatePreset(presetEl.value));
+  applyDatePreset(presetEl.value, { skipRender: true });
+}
+
+function applyDatePreset(preset, opts) {
+  filterState.datePreset = preset;
+  const isCustom = preset === 'custom';
+  document.getElementById('custom-date-from-group').style.display = isCustom ? '' : 'none';
+  document.getElementById('custom-date-to-group').style.display = isCustom ? '' : 'none';
+
+  const fromEl = document.getElementById('f-date-from');
+  const toEl = document.getElementById('f-date-to');
+
+  if (isCustom) {
+    // al entrar a Custom se arranca desde el último rango calculado, como punto de partida editable
+    filterState.dateFrom = fromEl.value || filterState.dateFrom || dataMinDate;
+    filterState.dateTo = toEl.value || filterState.dateTo || dataMaxDate;
+    fromEl.value = filterState.dateFrom; toEl.value = filterState.dateTo;
+  } else {
+    const range = computePresetRange(preset, dataMinDate, dataMaxDate);
+    filterState.dateFrom = range.from; filterState.dateTo = range.to;
+    fromEl.value = range.from; toEl.value = range.to;
+  }
+  if (!opts || !opts.skipRender) renderAll();
 }
 
 document.getElementById('gran-daily').addEventListener('click', () => {
@@ -1123,6 +1233,8 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   filterState.compareMode = 'previous';
   filterState.compareCustomFrom = null;
   filterState.compareCustomTo = null;
+  filterState.datePreset = 'last30';
+  highlightedAd = null;
   document.getElementById('f-compare').checked = false;
   document.getElementById('f-compare-mode').value = 'previous';
   document.getElementById('f-compare-from').value = '';
