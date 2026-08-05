@@ -121,7 +121,8 @@
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   th, td { text-align: right; padding: 8px 10px; font-size: 12.5px; white-space: nowrap; }
   th:nth-child(2), td:nth-child(2) {
-    text-align: left; white-space: normal; max-width: 260px;
+    text-align: left; white-space: normal; width: 220px; max-width: 220px;
+    overflow-wrap: break-word; word-break: break-word; hyphens: auto;
     position: sticky; left: 64px; z-index: 2; background: var(--surface-1);
   }
   th:first-child, td:first-child {
@@ -259,15 +260,24 @@
 
   <div class="card">
     <h2>Spend and Cost per Real MQL</h2>
-    <div class="chart-toolbar">
-      <button id="gran-daily" class="active">Daily</button>
-      <button id="gran-weekly">Weekly</button>
+    <div class="axis-controls">
+      <div class="filter-group">
+        <label>Bar metric (left axis)</label>
+        <select id="spend-metric-1"></select>
+      </div>
+      <div class="filter-group">
+        <label>Line metric (right axis)</label>
+        <select id="spend-metric-2"></select>
+      </div>
+      <div class="filter-group">
+        <label>&nbsp;</label>
+        <div class="chart-toolbar" style="margin:0;">
+          <button id="gran-daily" class="active">Daily</button>
+          <button id="gran-weekly">Weekly</button>
+        </div>
+      </div>
     </div>
-    <p class="chart-legend-label">
-      <span class="swatch" style="background:var(--series-1)"></span>Spend (left axis)
-      &nbsp;&nbsp;
-      <span class="swatch" style="background:var(--series-2)"></span>Cost per Real MQL (right axis)
-    </p>
+    <p class="chart-legend-label" id="spend-chart-legend"></p>
     <div class="chart-wrap" style="height:320px;"><canvas id="chart-spend"></canvas></div>
   </div>
 
@@ -315,6 +325,41 @@
         <select id="scatter-y"></select>
       </div>
     </div>
+    <div class="axis-controls" style="margin-top:4px;">
+      <div class="filter-group">
+        <label>Spend</label>
+        <div style="display:flex; gap:4px;">
+          <select id="scatter-filter-spend-op">
+            <option value="">No filter</option>
+            <option value="gt">Greater than</option>
+            <option value="lt">Less than</option>
+          </select>
+          <input type="number" id="scatter-filter-spend-val" placeholder="value" style="width:90px;">
+        </div>
+      </div>
+      <div class="filter-group">
+        <label>Impressions</label>
+        <div style="display:flex; gap:4px;">
+          <select id="scatter-filter-impressions-op">
+            <option value="">No filter</option>
+            <option value="gt">Greater than</option>
+            <option value="lt">Less than</option>
+          </select>
+          <input type="number" id="scatter-filter-impressions-val" placeholder="value" style="width:90px;">
+        </div>
+      </div>
+      <div class="filter-group">
+        <label>Clicks</label>
+        <div style="display:flex; gap:4px;">
+          <select id="scatter-filter-clicks-op">
+            <option value="">No filter</option>
+            <option value="gt">Greater than</option>
+            <option value="lt">Less than</option>
+          </select>
+          <input type="number" id="scatter-filter-clicks-val" placeholder="value" style="width:90px;">
+        </div>
+      </div>
+    </div>
     <div class="chart-wrap" style="height:380px;"><canvas id="chart-scatter"></canvas></div>
   </div>
 
@@ -338,6 +383,21 @@ const METRIC_OPTIONS = [
   { key: 'hookRate', label: 'Hook Rate', fmt: 'pct' },
   { key: 'bounceRate', label: 'Bounce Rate', fmt: 'pct' }
 ];
+
+// para el gráfico de Spend/CPSCH -- compute() trabaja sobre las sumas crudas de un bucket
+// (día o semana), no sobre filas individuales, así sirve para cualquiera de las 2 métricas elegibles
+const CHART_METRICS = {
+  spend:      { label: 'Spend', fmt: 'money', compute: s => s.spend },
+  cpm:        { label: 'CPM', fmt: 'money', compute: s => safeDiv(s.spend, s.impressions) * 1000 },
+  ctr:        { label: 'CTR', fmt: 'pct', compute: s => safeDiv(s.clicks, s.impressions) },
+  reach:      { label: 'Reach', fmt: 'int', compute: s => s.reach },
+  frequency:  { label: 'Frequency', fmt: 'dec', compute: s => safeDiv(s.impressions, s.reach) },
+  bounceRate: { label: 'Bounce Rate', fmt: 'pct', compute: s => safeDiv(s.bounced, s.sessions) },
+  mqlYes:     { label: 'Real MQLs', fmt: 'int', compute: s => s.mqlYes },
+  cpsch:      { label: 'Cost per Real MQL', fmt: 'money', compute: s => safeDiv(s.spend, s.mqlYes) },
+  mqlNo:      { label: 'Spam', fmt: 'int', compute: s => s.mqlNo }
+};
+const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'reach', 'frequency', 'bounceRate', 'mqlYes', 'cpsch', 'mqlNo'];
 
 let UNIFIED = []; // flat rows at Date x Account x Campaign x AdSet x Ad grain
 let charts = {};
@@ -747,17 +807,41 @@ function isoWeekStart(dateStr) {
   return d.toISOString().substring(0, 10);
 }
 
+function populateSpendMetricSelects() {
+  const sel1 = document.getElementById('spend-metric-1');
+  const sel2 = document.getElementById('spend-metric-2');
+  CHART_METRIC_KEYS.forEach(k => {
+    sel1.appendChild(new Option(CHART_METRICS[k].label, k));
+    sel2.appendChild(new Option(CHART_METRICS[k].label, k));
+  });
+  sel1.value = 'spend';
+  sel2.value = 'cpsch';
+  sel1.addEventListener('change', () => renderSpendChart(getFilteredRows()));
+  sel2.addEventListener('change', () => renderSpendChart(getFilteredRows()));
+}
+
 function renderSpendChart(rows) {
+  const metric1Key = document.getElementById('spend-metric-1').value || 'spend';
+  const metric2Key = document.getElementById('spend-metric-2').value || 'cpsch';
+  const metric1 = CHART_METRICS[metric1Key];
+  const metric2 = CHART_METRICS[metric2Key];
+
   const buckets = new Map();
   rows.forEach(r => {
     const key = granularity === 'weekly' ? isoWeekStart(r.date) : r.date;
-    const prev = buckets.get(key) || { spend: 0, mqlYes: 0 };
-    prev.spend += r.spend || 0; prev.mqlYes += r.mqlYes || 0;
+    const prev = buckets.get(key) || { spend: 0, impressions: 0, clicks: 0, reach: 0, bounced: 0, sessions: 0, mqlYes: 0, mqlNo: 0 };
+    prev.spend += r.spend || 0; prev.impressions += r.impressions || 0; prev.clicks += r.clicks || 0;
+    prev.reach += r.reach || 0; prev.bounced += r.bounced || 0; prev.sessions += r.sessions || 0;
+    prev.mqlYes += r.mqlYes || 0; prev.mqlNo += r.mqlNo || 0;
     buckets.set(key, prev);
   });
   const labels = Array.from(buckets.keys()).sort();
-  const spendData = labels.map(k => buckets.get(k).spend);
-  const cpschData = labels.map(k => safeDiv(buckets.get(k).spend, buckets.get(k).mqlYes));
+  const data1 = labels.map(k => metric1.compute(buckets.get(k)));
+  const data2 = labels.map(k => metric2.compute(buckets.get(k)));
+
+  const legendEl = document.getElementById('spend-chart-legend');
+  legendEl.innerHTML = '<span class="swatch" style="background:var(--series-1)"></span>' + metric1.label + ' (left axis)'
+    + '&nbsp;&nbsp;<span class="swatch" style="background:var(--series-2)"></span>' + metric2.label + ' (right axis)';
 
   const css = getComputedStyle(document.documentElement);
   const s1 = css.getPropertyValue('--series-1').trim();
@@ -782,8 +866,8 @@ function renderSpendChart(rows) {
     data: {
       labels,
       datasets: [
-        { type: 'bar', label: 'Spend', data: spendData, backgroundColor: s1, borderRadius: 4, maxBarThickness: 28, yAxisID: 'y' },
-        { type: 'line', label: 'Cost per Real MQL', data: cpschData, borderColor: s2, backgroundColor: s2, borderWidth: 2, pointRadius: 3, pointBackgroundColor: s2, tension: 0.15, yAxisID: 'y1' }
+        { type: 'bar', label: metric1.label, data: data1, backgroundColor: s1, borderRadius: 4, maxBarThickness: 28, yAxisID: 'y' },
+        { type: 'line', label: metric2.label, data: data2, borderColor: s2, backgroundColor: s2, borderWidth: 2, pointRadius: 3, pointBackgroundColor: s2, tension: 0.15, yAxisID: 'y1' }
       ]
     },
     options: {
@@ -792,7 +876,7 @@ function renderSpendChart(rows) {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: (ctx) => ctx.dataset.label + ': ' + fmtMoney(ctx.raw)
+            label: (ctx) => ctx.dataset.label + ': ' + fmtByType(ctx.raw, ctx.datasetIndex === 0 ? metric1.fmt : metric2.fmt)
           }
         }
       },
@@ -800,13 +884,13 @@ function renderSpendChart(rows) {
         x: { grid: { display: false }, ticks: { color: muted, maxRotation: 0, autoSkip: true } },
         y: {
           position: 'left', beginAtZero: true, min: 0,
-          grid: { color: grid }, ticks: { color: muted, callback: (v) => fmtMoney(v) },
-          title: { display: true, text: 'Spend', color: muted }
+          grid: { color: grid }, ticks: { color: muted, callback: (v) => fmtByType(v, metric1.fmt) },
+          title: { display: true, text: metric1.label, color: muted }
         },
         y1: {
           position: 'right', beginAtZero: true, min: 0,
-          grid: { display: false }, ticks: { color: muted, callback: (v) => fmtMoney(v) },
-          title: { display: true, text: 'Cost per Real MQL', color: muted }
+          grid: { display: false }, ticks: { color: muted, callback: (v) => fmtByType(v, metric2.fmt) },
+          title: { display: true, text: metric2.label, color: muted }
         }
       }
     }
@@ -892,6 +976,21 @@ function populateScatterSelects() {
   ySel.value = 'bounceRate';
   xSel.addEventListener('change', () => renderScatter(getFilteredRows()));
   ySel.addEventListener('change', () => renderScatter(getFilteredRows()));
+
+  ['spend', 'impressions', 'clicks'].forEach(field => {
+    document.getElementById('scatter-filter-' + field + '-op').addEventListener('change', () => renderScatter(getFilteredRows()));
+    document.getElementById('scatter-filter-' + field + '-val').addEventListener('input', () => renderScatter(getFilteredRows()));
+  });
+}
+
+function applyScatterThresholdFilters(agg) {
+  return ['spend', 'impressions', 'clicks'].reduce((rows, field) => {
+    const op = document.getElementById('scatter-filter-' + field + '-op').value;
+    const rawVal = document.getElementById('scatter-filter-' + field + '-val').value;
+    if (!op || rawVal === '') return rows;
+    const val = Number(rawVal);
+    return rows.filter(r => op === 'gt' ? r[field] > val : r[field] < val);
+  }, agg);
 }
 
 function renderScatter(rows) {
@@ -899,7 +998,7 @@ function renderScatter(rows) {
   const yKey = document.getElementById('scatter-y').value;
   const xMeta = METRIC_OPTIONS.find(m => m.key === xKey);
   const yMeta = METRIC_OPTIONS.find(m => m.key === yKey);
-  const agg = aggregateByAd(rows).filter(r => r.impressions > 0);
+  const agg = applyScatterThresholdFilters(aggregateByAd(rows).filter(r => r.impressions > 0));
 
   const css = getComputedStyle(document.documentElement);
   const s1 = css.getPropertyValue('--series-1').trim();
@@ -1046,6 +1145,7 @@ async function init() {
     setupDateFilters();
     refreshFilterOptions();
     populateScatterSelects();
+    populateSpendMetricSelects();
     document.getElementById('app-status').style.display = 'none';
     document.getElementById('app-body').style.display = 'block';
     renderAll();
