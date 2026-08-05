@@ -105,6 +105,22 @@
   .brand-logo { width: 56px; height: 56px; border-radius: 12px; flex-shrink: 0; }
   .brand-header h1 { margin: 0 0 2px; }
 
+  /* ---- password gate ---- */
+  .password-gate {
+    position: fixed; inset: 0; z-index: 1000;
+    background: var(--surface-2);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .password-gate-box {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 32px; max-width: 320px; width: 90%; text-align: center;
+  }
+  .password-gate-box h1 { font-size: 18px; margin: 0 0 4px; }
+  .password-gate-box .subtitle { margin: 0 0 20px; }
+  #password-gate-form { display: flex; gap: 8px; }
+  #password-gate-input { flex: 1; min-width: 0; }
+  .password-gate-error { color: var(--critical); font-size: 12px; margin: 12px 0 0; font-weight: 700; }
+
   .card {
     background: var(--surface-1);
     border: 1px solid var(--border);
@@ -155,10 +171,10 @@
   .msel-item input { margin: 0; }
 
   /* ---- big numbers ---- */
-  .bignum-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
+  .bignum-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px 12px; }
   .bignum-tile { padding: 4px; }
-  .bignum-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
-  .bignum-value { font-size: 30px; font-weight: 600; font-variant-numeric: proportional-nums; }
+  .bignum-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; white-space: nowrap; }
+  .bignum-value { font-size: 24px; font-weight: 600; font-variant-numeric: proportional-nums; }
   .bignum-delta { font-size: 13px; font-weight: 600; margin-top: 4px; min-height: 16px; }
   .bignum-delta.delta-good { color: var(--good); }
   .bignum-delta.delta-bad { color: var(--critical); }
@@ -223,6 +239,20 @@
 </style>
 </head>
 <body>
+
+<div id="password-gate" class="password-gate">
+  <div class="password-gate-box">
+    <h1>SSW Account Dashboard</h1>
+    <p class="subtitle">Enter password to continue</p>
+    <form id="password-gate-form">
+      <input type="password" id="password-gate-input" placeholder="Password" autocomplete="off" autofocus>
+      <button type="submit">Enter</button>
+    </form>
+    <p class="password-gate-error" id="password-gate-error" style="display:none;">Incorrect password</p>
+  </div>
+</div>
+
+<div id="dashboard-content" style="display:none;">
 
 <div class="brand-header">
   <img class="brand-logo" src="data:image/jpeg;base64,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" alt="SSW logo">
@@ -318,7 +348,17 @@
         <div class="bignum-delta" id="bn-clicks-delta"></div>
       </div>
       <div class="bignum-tile">
-        <div class="bignum-label">Frequency</div>
+        <div class="bignum-label">CPM</div>
+        <div class="bignum-value" id="bn-cpm">–</div>
+        <div class="bignum-delta" id="bn-cpm-delta"></div>
+      </div>
+      <div class="bignum-tile">
+        <div class="bignum-label">CTR</div>
+        <div class="bignum-value" id="bn-ctr">–</div>
+        <div class="bignum-delta" id="bn-ctr-delta"></div>
+      </div>
+      <div class="bignum-tile">
+        <div class="bignum-label">Frequency (estimated)</div>
         <div class="bignum-value" id="bn-frequency">–</div>
         <div class="bignum-delta" id="bn-frequency-delta"></div>
       </div>
@@ -440,6 +480,8 @@
     <h2>Funnel view</h2>
     <div class="funnel" id="funnel-body"></div>
   </div>
+
+</div>
 
 </div>
 
@@ -863,13 +905,15 @@ function renderBigNumbers(rows) {
   const s = sumRows(rows);
   document.getElementById('bn-spend').textContent = fmtMoney(s.spend);
   document.getElementById('bn-clicks').textContent = fmtInt(s.clicks);
+  document.getElementById('bn-cpm').textContent = fmtMoney(safeDiv(s.spend, s.impressions) * 1000);
+  document.getElementById('bn-ctr').textContent = fmtPct(safeDiv(s.clicks, s.impressions));
   document.getElementById('bn-frequency').textContent = fmtDec(safeDiv(s.impressions, s.reach));
   document.getElementById('bn-real-mql').textContent = fmtInt(s.mqlYes);
   document.getElementById('bn-spam').textContent = fmtInt(s.mqlNo);
   document.getElementById('bn-cpsch').textContent = fmtMoney(safeDiv(s.spend, s.mqlYes));
 
   const compareEl = document.getElementById('compare-range-label');
-  const deltaKeys = ['spend', 'clicks', 'frequency', 'real-mql', 'spam', 'cpsch'];
+  const deltaKeys = ['spend', 'clicks', 'cpm', 'ctr', 'frequency', 'real-mql', 'spam', 'cpsch'];
 
   if (!filterState.compare || !filterState.dateFrom || !filterState.dateTo) {
     deltaKeys.forEach(k => {
@@ -898,6 +942,10 @@ function renderBigNumbers(rows) {
     prevTo = prevRange.prevTo;
   }
   const p = sumRows(getFilteredRowsForRange(prevFrom, prevTo));
+  const curCpm = safeDiv(s.spend, s.impressions) * 1000;
+  const prevCpm = safeDiv(p.spend, p.impressions) * 1000;
+  const curCtr = safeDiv(s.clicks, s.impressions);
+  const prevCtr = safeDiv(p.clicks, p.impressions);
   const curFreq = safeDiv(s.impressions, s.reach);
   const prevFreq = safeDiv(p.impressions, p.reach);
   const curCpsch = safeDiv(s.spend, s.mqlYes);
@@ -905,6 +953,8 @@ function renderBigNumbers(rows) {
 
   setDelta('spend', s.spend, p.spend, 'neutral');
   setDelta('clicks', s.clicks, p.clicks, 'up-good');
+  setDelta('cpm', curCpm, prevCpm, 'up-bad');
+  setDelta('ctr', curCtr, prevCtr, 'up-good');
   setDelta('frequency', curFreq, prevFreq, 'up-good');
   setDelta('real-mql', s.mqlYes, p.mqlYes, 'up-good');
   setDelta('spam', s.mqlNo, p.mqlNo, 'up-bad');
@@ -1359,7 +1409,43 @@ async function init() {
   }
 }
 
-init();
+// ===================== PASSWORD GATE =====================
+// Protección liviana del lado del cliente -- no es seguridad real (la contraseña
+// queda en el HTML/JS servido, visible con "view source"), solo evita que alguien
+// que abre el link por casualidad vea el dashboard. La Google Sheet detrás sigue
+// siendo "Anyone with the link" independientemente de esto (ver HANDOFF.md §6).
+const DASHBOARD_PASSWORD = 'AccountSSW2026';
+const PASSWORD_SESSION_KEY = 'ssw-dashboard-unlocked';
+
+function unlockDashboard() {
+  sessionStorage.setItem(PASSWORD_SESSION_KEY, '1');
+  document.getElementById('password-gate').style.display = 'none';
+  document.getElementById('dashboard-content').style.display = 'block';
+  init();
+}
+
+function setupPasswordGate() {
+  if (sessionStorage.getItem(PASSWORD_SESSION_KEY) === '1') {
+    unlockDashboard();
+    return;
+  }
+  const form = document.getElementById('password-gate-form');
+  const input = document.getElementById('password-gate-input');
+  const errorEl = document.getElementById('password-gate-error');
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (input.value === DASHBOARD_PASSWORD) {
+      unlockDashboard();
+    } else {
+      errorEl.style.display = 'block';
+      input.value = '';
+      input.focus();
+    }
+  });
+  input.focus();
+}
+
+setupPasswordGate();
 </script>
 </body>
 </html>
