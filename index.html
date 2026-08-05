@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSW Account Dashboard — Meta Ads</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --surface-2:      #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-1:       #4a3aa7; /* violet -- spend / primary (branding SSW) */
+    --series-2:       #008300; /* green -- cost per real mql (branding SSW) */
+    --good:           #0ca30c;
+    --critical:       #d03b3b;
+    --funnel-1: #c3b6ec; --funnel-2: #9f8bdd; --funnel-3: #4a3aa7; --funnel-4: #3c2f89; --funnel-5: #241c52;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --surface-2:      #0d0d0d;
+      --text-primary:   #E6C301;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-1:       #9085e9;
+      --series-2:       #008300;
+      --good:           #0ca30c;
+      --critical:       #e66767;
+      --funnel-1: #241c52; --funnel-2: #3c2f89; --funnel-3: #9085e9; --funnel-4: #9f8bdd; --funnel-5: #c3b6ec;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--surface-2);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    padding: 24px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 16px; color: var(--text-primary); }
+  .subtitle { color: var(--text-secondary); font-size: 13px; margin: 0; font-weight: 700; }
+  .caveat { color: var(--text-muted); font-size: 11px; font-weight: 400; margin: 4px 0 0; max-width: 640px; }
+  .brand-header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+  .brand-logo { width: 56px; height: 56px; border-radius: 12px; flex-shrink: 0; }
+  .brand-header h1 { margin: 0 0 2px; }
+
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+
+  /* ---- filters bar ---- */
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+  }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .filter-group label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; font-weight: 700; }
+  input[type=date], select, button {
+    font-family: inherit; font-size: 13px;
+    background: var(--surface-1); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 7px 10px;
+  }
+  button { cursor: pointer; }
+  button:hover { background: var(--surface-2); }
+  .msel { position: relative; }
+  .msel-btn { min-width: 160px; text-align: left; display: flex; justify-content: space-between; gap: 8px; }
+  .msel-panel {
+    display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 20;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px; min-width: 240px; max-height: 280px; overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  }
+  .msel.open .msel-panel { display: block; }
+  .msel-actions { display: flex; gap: 8px; padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid var(--gridline); }
+  .msel-actions a { font-size: 12px; color: var(--series-1); cursor: pointer; text-decoration: none; }
+  .msel-item { display: flex; align-items: center; gap: 8px; padding: 4px 2px; font-size: 13px; }
+  .msel-item input { margin: 0; }
+
+  /* ---- big numbers ---- */
+  .bignum-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
+  .bignum-tile { padding: 4px; }
+  .bignum-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
+  .bignum-value { font-size: 30px; font-weight: 600; font-variant-numeric: proportional-nums; }
+  .bignum-delta { font-size: 13px; font-weight: 600; margin-top: 4px; min-height: 16px; }
+  .bignum-delta.delta-good { color: var(--good); }
+  .bignum-delta.delta-bad { color: var(--critical); }
+  .bignum-delta.delta-neutral { color: var(--text-secondary); font-weight: 700; }
+  .compare-toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-primary); white-space: nowrap; cursor: pointer; }
+  .compare-range { color: var(--text-muted); font-size: 12px; margin: 8px 0 0; font-weight: 700; }
+
+  /* ---- spend chart ---- */
+  .chart-toolbar { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 12px; }
+  .chart-toolbar button.active { background: var(--series-1); color: white; border-color: var(--series-1); }
+  .chart-wrap { position: relative; height: 220px; margin-bottom: 8px; }
+  .chart-wrap.small { height: 160px; }
+  .chart-legend-label { font-size: 12px; color: var(--text-secondary); margin: 0 0 4px; display: flex; align-items: center; gap: 6px; font-weight: 700; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+  /* ---- table ---- */
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 8px 10px; font-size: 12.5px; white-space: nowrap; }
+  th:nth-child(2), td:nth-child(2) {
+    text-align: left; white-space: normal; max-width: 260px;
+    position: sticky; left: 64px; z-index: 2; background: var(--surface-1);
+  }
+  th:first-child, td:first-child {
+    position: sticky; left: 0; z-index: 2; background: var(--surface-1);
+    width: 64px; min-width: 64px; max-width: 64px;
+  }
+  th:first-child, th:nth-child(2) { z-index: 3; }
+  th { color: var(--text-muted); font-weight: 700; border-bottom: 1px solid var(--baseline); cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--surface-1); }
+  th:first-child { cursor: default; }
+  th:hover { color: var(--text-primary); }
+  th.sorted::after { content: ' ▾'; }
+  td { border-bottom: 1px solid var(--gridline); color: var(--text-secondary); font-weight: 700; }
+  .creative-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; display: block; }
+  tr:hover td { color: var(--text-primary); }
+  .table-scroll { max-height: 480px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+  .table-meta { color: var(--text-muted); font-size: 12px; margin-top: 8px; font-weight: 700; }
+
+  /* ---- scatter controls ---- */
+  .axis-controls { display: flex; gap: 24px; margin-bottom: 12px; }
+
+  /* ---- funnel ---- */
+  .funnel { display: flex; flex-direction: column; gap: 6px; }
+  .funnel-row { display: grid; grid-template-columns: 160px 1fr 90px 70px; align-items: center; gap: 12px; }
+  .funnel-bar-track { background: var(--surface-2); border-radius: 4px; height: 28px; }
+  .funnel-bar { height: 100%; border-radius: 4px; }
+  .funnel-label { font-size: 13px; color: var(--text-secondary); font-weight: 700; }
+  .funnel-value { font-size: 13px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+  .funnel-pct { font-size: 12px; color: var(--text-muted); text-align: right; font-weight: 700; }
+
+  .loading, .error { color: var(--text-muted); padding: 40px; text-align: center; font-weight: 700; }
+  .error { color: var(--critical); }
+  footer { color: var(--text-muted); font-size: 11px; margin-top: 32px; }
+</style>
+</head>
+<body>
+
+<div class="brand-header">
+  <img class="brand-logo" src="data:image/jpeg;base64,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" alt="SSW logo">
+  <div>
+    <h1>SSW Account Dashboard — Meta Ads</h1>
+    <p class="subtitle">SSW | 2026 · So Shall We USA · New Account SSW | 2026</p>
+    <p class="caveat">Source: Meta_Raw + PostHog_Raw + iClosed_Raw, joined by Ad Name. Reach/Frequency summed by day can slightly overestimate over long ranges (Meta deduplicates reach within a range, not day by day). Hold Rate not available yet.</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="filters">
+    <div class="filter-group">
+      <label>From</label>
+      <input type="date" id="f-date-from">
+    </div>
+    <div class="filter-group">
+      <label>To</label>
+      <input type="date" id="f-date-to">
+    </div>
+    <div class="filter-group">
+      <label>Account</label>
+      <div class="msel" id="msel-account"></div>
+    </div>
+    <div class="filter-group">
+      <label>Campaign</label>
+      <div class="msel" id="msel-campaign"></div>
+    </div>
+    <div class="filter-group">
+      <label>Ad Set</label>
+      <div class="msel" id="msel-adset"></div>
+    </div>
+    <div class="filter-group">
+      <button id="btn-reset">Reset filters</button>
+    </div>
+    <div class="filter-group">
+      <label>&nbsp;</label>
+      <label class="compare-toggle">
+        <input type="checkbox" id="f-compare"> Compare
+      </label>
+    </div>
+    <div class="filter-group" id="compare-mode-group" style="display:none;">
+      <label>Compare to</label>
+      <select id="f-compare-mode">
+        <option value="previous">Previous period</option>
+        <option value="custom">Custom range</option>
+      </select>
+    </div>
+    <div class="filter-group" id="compare-custom-from-group" style="display:none;">
+      <label>Custom from</label>
+      <input type="date" id="f-compare-from">
+    </div>
+    <div class="filter-group" id="compare-custom-to-group" style="display:none;">
+      <label>Custom to</label>
+      <input type="date" id="f-compare-to">
+    </div>
+  </div>
+  <p class="compare-range" id="compare-range-label"></p>
+</div>
+
+<div id="app-status" class="loading">Loading data from Meta_Raw, PostHog_Raw and iClosed_Raw…</div>
+
+<div id="app-body" style="display:none;">
+
+  <div class="card">
+    <h2>Big Numbers</h2>
+    <div class="bignum-row">
+      <div class="bignum-tile">
+        <div class="bignum-label">Spend</div>
+        <div class="bignum-value" id="bn-spend">–</div>
+        <div class="bignum-delta" id="bn-spend-delta"></div>
+      </div>
+      <div class="bignum-tile">
+        <div class="bignum-label">Clicks</div>
+        <div class="bignum-value" id="bn-clicks">–</div>
+        <div class="bignum-delta" id="bn-clicks-delta"></div>
+      </div>
+      <div class="bignum-tile">
+        <div class="bignum-label">Frequency</div>
+        <div class="bignum-value" id="bn-frequency">–</div>
+        <div class="bignum-delta" id="bn-frequency-delta"></div>
+      </div>
+      <div class="bignum-tile">
+        <div class="bignum-label">Real MQLs (iClosed)</div>
+        <div class="bignum-value" id="bn-real-mql">–</div>
+        <div class="bignum-delta" id="bn-real-mql-delta"></div>
+      </div>
+      <div class="bignum-tile">
+        <div class="bignum-label">Spam (iClosed)</div>
+        <div class="bignum-value" id="bn-spam">–</div>
+        <div class="bignum-delta" id="bn-spam-delta"></div>
+      </div>
+      <div class="bignum-tile">
+        <div class="bignum-label">Cost per Real MQL</div>
+        <div class="bignum-value" id="bn-cpsch">–</div>
+        <div class="bignum-delta" id="bn-cpsch-delta"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Spend and Cost per Real MQL</h2>
+    <div class="chart-toolbar">
+      <button id="gran-daily" class="active">Daily</button>
+      <button id="gran-weekly">Weekly</button>
+    </div>
+    <p class="chart-legend-label">
+      <span class="swatch" style="background:var(--series-1)"></span>Spend (left axis)
+      &nbsp;&nbsp;
+      <span class="swatch" style="background:var(--series-2)"></span>Cost per Real MQL (right axis)
+    </p>
+    <div class="chart-wrap" style="height:320px;"><canvas id="chart-spend"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>Creative Performance</h2>
+    <div class="table-scroll">
+      <table id="creative-table">
+        <thead>
+          <tr>
+            <th>Creative</th>
+            <th data-key="ad">Ad</th>
+            <th data-key="account">Account</th>
+            <th data-key="spend">Spend</th>
+            <th data-key="impressions">Impressions</th>
+            <th data-key="clicks">Clicks</th>
+            <th data-key="ctr">CTR</th>
+            <th data-key="cpm">CPM</th>
+            <th data-key="reach">Reach</th>
+            <th data-key="frequency">Frequency</th>
+            <th data-key="lpViews">LP Views</th>
+            <th data-key="registrations">Registrations</th>
+            <th data-key="mqlYes">Real MQL (Yes)</th>
+            <th data-key="mqlNo">Real MQL (No)</th>
+            <th data-key="mqlBlank">Real MQL (Blank)</th>
+            <th data-key="cpsch">Cost / Real MQL</th>
+            <th data-key="hookRate">Hook Rate</th>
+            <th data-key="bounceRate">Bounce Rate (PostHog)</th>
+          </tr>
+        </thead>
+        <tbody id="creative-table-body"></tbody>
+      </table>
+    </div>
+    <p class="table-meta" id="creative-table-meta"></p>
+  </div>
+
+  <div class="card">
+    <h2>Creative Table — (Choose your Metrics)</h2>
+    <div class="axis-controls">
+      <div class="filter-group">
+        <label>X Axis</label>
+        <select id="scatter-x"></select>
+      </div>
+      <div class="filter-group">
+        <label>Y Axis</label>
+        <select id="scatter-y"></select>
+      </div>
+    </div>
+    <div class="chart-wrap" style="height:380px;"><canvas id="chart-scatter"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>Funnel view</h2>
+    <div class="funnel" id="funnel-body"></div>
+  </div>
+
+</div>
+
+
+<script>
+// ===================== CONFIG =====================
+const SHEET_ID = '1uBEyQS2yW-RncHIHVOSb90ulAO6zmyDntgHXZ4gyVcg';
+const METRIC_OPTIONS = [
+  { key: 'spend', label: 'Spend', fmt: 'money' },
+  { key: 'ctr', label: 'CTR', fmt: 'pct' },
+  { key: 'cpm', label: 'CPM', fmt: 'money' },
+  { key: 'reach', label: 'Reach', fmt: 'int' },
+  { key: 'frequency', label: 'Frequency', fmt: 'dec' },
+  { key: 'hookRate', label: 'Hook Rate', fmt: 'pct' },
+  { key: 'bounceRate', label: 'Bounce Rate', fmt: 'pct' }
+];
+
+let UNIFIED = []; // flat rows at Date x Account x Campaign x AdSet x Ad grain
+let charts = {};
+
+// ===================== GVIZ FETCH =====================
+
+function fetchSheetTab(sheetName) {
+  return new Promise((resolve, reject) => {
+    const cb = 'cb_' + sheetName.replace(/[^a-zA-Z0-9]/g, '') + '_' + Math.random().toString(36).slice(2);
+    window[cb] = (json) => {
+      delete window[cb];
+      script.remove();
+      resolve(json.table);
+    };
+    const url = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:json;responseHandler:' + cb
+      + '&sheet=' + encodeURIComponent(sheetName) + '&_=' + Date.now();
+    const script = document.createElement('script');
+    script.src = url;
+    script.onerror = () => reject(new Error('No se pudo cargar el tab ' + sheetName));
+    document.head.appendChild(script);
+  });
+}
+
+function cellStr(c) { return (c && c.v != null) ? String(c.v) : ''; }
+function cellNum(c) { return (c && c.v != null && c.v !== '') ? Number(c.v) : 0; }
+function cellDate(c) {
+  if (!c || c.v == null) return '';
+  const v = c.v;
+  if (typeof v === 'string') {
+    const m = v.match(/^Date\((\d+),(\d+),(\d+)\)/);
+    if (m) {
+      const y = +m[1], mo = (+m[2]) + 1, d = +m[3];
+      return y + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    }
+    return v.substring(0, 10);
+  }
+  return String(v).substring(0, 10);
+}
+
+function dataRows(table) {
+  // fila 0 de "rows" son los headers (el sheet no tiene metadata de header formal),
+  // así que se descarta y se lee por posición fija
+  return (table.rows || []).slice(1).filter(r => r.c && r.c[0] && r.c[0].v);
+}
+
+// ===================== LOAD + MERGE =====================
+
+async function loadAll() {
+  const [metaTable, phTable, icTable] = await Promise.all([
+    fetchSheetTab('Meta_Raw'),
+    fetchSheetTab('PostHog_Raw'),
+    fetchSheetTab('iClosed_Raw')
+  ]);
+
+  const metaRows = dataRows(metaTable).map(r => ({
+    date: cellDate(r.c[0]), account: cellStr(r.c[1]), campaign: cellStr(r.c[2]), adset: cellStr(r.c[3]), ad: cellStr(r.c[4]),
+    spend: cellNum(r.c[5]), impressions: cellNum(r.c[6]), clicks: cellNum(r.c[7]), reach: cellNum(r.c[8]), frequency: cellNum(r.c[9]),
+    lpViews: cellNum(r.c[10]), registrations: cellNum(r.c[11]), schedulesMeta: cellNum(r.c[12]), videoViews: cellNum(r.c[13]),
+    thumbnailUrl: cellStr(r.c[14])
+  }));
+
+  const phRows = dataRows(phTable).map(r => ({
+    date: cellDate(r.c[0]), ad: cellStr(r.c[1]), sessions: cellNum(r.c[2]), bounced: cellNum(r.c[3])
+  }));
+
+  const adsByDate = buildAdCrosscheck(metaRows);
+  // iClosed nunca trae Account -- lo completo cruzando el Campaign contra Meta_Raw
+  // (mismo problema de "+" que en Ad, así que reuso la misma lógica de crosscheck)
+  const campaignCrosscheck = buildNameCrosscheck(metaRows.map(r => r.campaign));
+  const campaignToAccount = new Map();
+  metaRows.forEach(r => { if (!campaignToAccount.has(r.campaign)) campaignToAccount.set(r.campaign, r.account); });
+
+  const icRows = dataRows(icTable).flatMap(r => {
+    const date = cellDate(r.c[0]);
+    const campaign = resolveByCrosscheck(cellStr(r.c[2]), campaignCrosscheck);
+    const account = cellStr(r.c[1]) || campaignToAccount.get(campaign) || '';
+    const adsetCandidates = splitMultiValue(cellStr(r.c[3]));
+    const adCandidates = splitMultiValue(cellStr(r.c[4]));
+    const mqlRaw = cellStr(r.c[5]).trim().toUpperCase();
+    const mql = mqlRaw === 'YES' ? 'yes' : mqlRaw === 'NO' ? 'no' : 'blank';
+    const ads = adCandidates.length ? adCandidates : ['(unattributed)'];
+    return ads.map((rawAd, i) => ({
+      date, account, campaign,
+      adset: decodePlusEncoded(adsetCandidates[i] || adsetCandidates[0] || ''),
+      ad: resolveAdName(rawAd, date, adsByDate),
+      mql
+    }));
+  });
+
+  UNIFIED = mergeSources(metaRows, phRows, icRows);
+}
+
+function decodePlusEncoded(s) {
+  if (!s) return s;
+  try { return decodeURIComponent(s.replace(/\+/g, ' ')); } catch (e) { return s.replace(/\+/g, ' '); }
+}
+
+function splitMultiValue(s) {
+  return String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+}
+
+function buildNameCrosscheck(names) {
+  const raw = new Set(names);
+  const encoded = new Map();
+  names.forEach(n => encoded.set(n.replace(/ /g, '+'), n));
+  return { raw, encoded };
+}
+
+function resolveByCrosscheck(rawValue, crosscheck) {
+  if (crosscheck.raw.has(rawValue)) return rawValue;
+  if (crosscheck.encoded.has(rawValue)) return crosscheck.encoded.get(rawValue);
+  return decodePlusEncoded(rawValue);
+}
+
+function buildAdCrosscheck(metaRows) {
+  // por fecha: set de nombres reales + índice inverso "nombre con espacios -> +" (sin tocar
+  // los + legítimos, ej "ADV+") para poder revertir el encoding de iClosed sin ambigüedad
+  const map = new Map();
+  metaRows.forEach(r => {
+    if (!map.has(r.date)) map.set(r.date, { raw: new Set(), encoded: new Map() });
+    const bucket = map.get(r.date);
+    bucket.raw.add(r.ad);
+    bucket.encoded.set(r.ad.replace(/ /g, '+'), r.ad);
+  });
+  return map;
+}
+
+function resolveAdName(rawAd, date, adsByDate) {
+  const bucket = adsByDate.get(date);
+  if (!bucket) return decodePlusEncoded(rawAd);
+  if (bucket.raw.has(rawAd)) return rawAd;
+  if (bucket.encoded.has(rawAd)) return bucket.encoded.get(rawAd);
+  return decodePlusEncoded(rawAd);
+}
+
+function mergeSources(metaRows, phRows, icRows) {
+  const phMap = new Map();
+  phRows.forEach(r => {
+    const key = r.date + '' + r.ad;
+    const prev = phMap.get(key) || { sessions: 0, bounced: 0 };
+    prev.sessions += r.sessions; prev.bounced += r.bounced;
+    phMap.set(key, prev);
+  });
+
+  const icMap = new Map();
+  icRows.forEach(r => {
+    const key = r.date + '' + r.ad;
+    const prev = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, account: r.account, campaign: r.campaign, adset: r.adset, date: r.date, ad: r.ad };
+    if (r.mql === 'yes') prev.mqlYes++; else if (r.mql === 'no') prev.mqlNo++; else prev.mqlBlank++;
+    icMap.set(key, prev);
+  });
+
+  const seen = new Set();
+  const rows = [];
+
+  metaRows.forEach(r => {
+    const key = r.date + '' + r.ad;
+    seen.add(key);
+    const ph = phMap.get(key) || { sessions: 0, bounced: 0 };
+    const ic = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0 };
+    rows.push(Object.assign({}, r, {
+      sessions: ph.sessions, bounced: ph.bounced,
+      mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank
+    }));
+  });
+
+  // filas de iClosed sin match en Meta (campaña pausada/borrada, sin atribución, o nombre
+  // que ni siquiera decodificado matchea) -- se conservan igual para no perder Real MQL silenciosamente
+  let unmatched = 0;
+  icMap.forEach((ic, key) => {
+    if (seen.has(key)) return;
+    unmatched++;
+    rows.push({
+      date: ic.date, account: ic.account, campaign: ic.campaign, adset: ic.adset, ad: ic.ad,
+      spend: 0, impressions: 0, clicks: 0, reach: 0, frequency: 0, lpViews: 0, registrations: 0, schedulesMeta: 0, videoViews: 0,
+      sessions: 0, bounced: 0, mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank
+    });
+  });
+  if (unmatched > 0) console.warn('iClosed: ' + unmatched + ' rows (Date+Ad) with no match in Meta_Raw -- check ad names.');
+
+  return rows;
+}
+
+// ===================== FILTER UI =====================
+
+const filterState = {
+  dateFrom: null, dateTo: null, account: new Set(), campaign: new Set(), adset: new Set(),
+  compare: false, compareMode: 'previous', compareCustomFrom: null, compareCustomTo: null
+};
+
+function uniqueSorted(arr) { return Array.from(new Set(arr.filter(Boolean))).sort(); }
+
+function buildMultiSelect(containerId, label, options, stateSet, onChange) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '';
+  const btn = document.createElement('button');
+  btn.className = 'msel-btn';
+  const panel = document.createElement('div');
+  panel.className = 'msel-panel';
+
+  function renderBtn() {
+    const n = stateSet.size;
+    btn.innerHTML = '<span>' + label + (n ? ' (' + n + ')' : ' (All)') + '</span><span>▾</span>';
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'msel-actions';
+  const selAll = document.createElement('a'); selAll.textContent = 'All';
+  const clearAll = document.createElement('a'); clearAll.textContent = 'Clear';
+  selAll.onclick = () => { stateSet.clear(); options.forEach(o => stateSet.add(o)); renderBtn(); renderItems(); onChange(); };
+  clearAll.onclick = () => { stateSet.clear(); renderBtn(); renderItems(); onChange(); };
+  actions.appendChild(selAll); actions.appendChild(clearAll);
+  panel.appendChild(actions);
+
+  const itemsWrap = document.createElement('div');
+  panel.appendChild(itemsWrap);
+
+  function renderItems() {
+    itemsWrap.innerHTML = '';
+    options.forEach(opt => {
+      const row = document.createElement('label');
+      row.className = 'msel-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = stateSet.has(opt);
+      cb.onchange = () => {
+        if (cb.checked) stateSet.add(opt); else stateSet.delete(opt);
+        renderBtn(); onChange();
+      };
+      const span = document.createElement('span'); span.textContent = opt;
+      row.appendChild(cb); row.appendChild(span);
+      itemsWrap.appendChild(row);
+    });
+  }
+
+  btn.onclick = (e) => { e.stopPropagation(); el.classList.toggle('open'); };
+  document.addEventListener('click', (e) => { if (!el.contains(e.target)) el.classList.remove('open'); });
+
+  el.appendChild(btn); el.appendChild(panel);
+  renderBtn(); renderItems();
+}
+
+function refreshFilterOptions() {
+  const accounts = uniqueSorted(UNIFIED.map(r => r.account));
+  const campaignsPool = UNIFIED.filter(r => filterState.account.size === 0 || filterState.account.has(r.account));
+  const campaigns = uniqueSorted(campaignsPool.map(r => r.campaign));
+  const adsetPool = campaignsPool.filter(r => filterState.campaign.size === 0 || filterState.campaign.has(r.campaign));
+  const adsets = uniqueSorted(adsetPool.map(r => r.adset));
+
+  buildMultiSelect('msel-account', 'Account', accounts, filterState.account, () => { refreshFilterOptions(); renderAll(); });
+  buildMultiSelect('msel-campaign', 'Campaign', campaigns, filterState.campaign, () => { refreshFilterOptions(); renderAll(); });
+  buildMultiSelect('msel-adset', 'Ad Set', adsets, filterState.adset, () => { refreshFilterOptions(); renderAll(); });
+}
+
+function getFilteredRowsForRange(dateFrom, dateTo) {
+  return UNIFIED.filter(r => {
+    if (dateFrom && r.date < dateFrom) return false;
+    if (dateTo && r.date > dateTo) return false;
+    if (filterState.account.size && !filterState.account.has(r.account)) return false;
+    if (filterState.campaign.size && !filterState.campaign.has(r.campaign)) return false;
+    if (filterState.adset.size && !filterState.adset.has(r.adset)) return false;
+    return true;
+  });
+}
+
+function getFilteredRows() {
+  return getFilteredRowsForRange(filterState.dateFrom, filterState.dateTo);
+}
+
+// mismo largo de días, inmediatamente antes del rango actual
+function getPreviousRange(dateFrom, dateTo) {
+  const start = new Date(dateFrom + 'T00:00:00Z');
+  const end = new Date(dateTo + 'T00:00:00Z');
+  const days = Math.round((end - start) / 86400000) + 1;
+  const prevTo = shiftDate(dateFrom, -1);
+  const prevFrom = shiftDate(prevTo, -(days - 1));
+  return { prevFrom, prevTo };
+}
+
+function shiftDate(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().substring(0, 10);
+}
+
+// ===================== FORMATTING =====================
+
+function fmtMoney(v) { return '$' + (v || 0).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
+function fmtInt(v) { return Math.round(v || 0).toLocaleString('en-US'); }
+function fmtDec(v) { return (v || 0).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
+function fmtPct(v) { return ((v || 0) * 100).toLocaleString('en-US', { maximumFractionDigits: 1 }) + '%'; }
+function fmtByType(v, fmt) { return fmt === 'money' ? fmtMoney(v) : fmt === 'pct' ? fmtPct(v) : fmt === 'int' ? fmtInt(v) : fmtDec(v); }
+
+function safeDiv(a, b) { return b > 0 ? a / b : 0; }
+
+// ===================== AGGREGATION =====================
+
+function sumRows(rows) {
+  const s = { spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, registrations: 0, schedulesMeta: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, videoViews: 0, sessions: 0, bounced: 0 };
+  rows.forEach(r => { Object.keys(s).forEach(k => s[k] += (r[k] || 0)); });
+  return s;
+}
+
+function aggregateByAd(rows) {
+  const map = new Map();
+  rows.forEach(r => {
+    if (!map.has(r.ad)) map.set(r.ad, { ad: r.ad, account: r.account, thumbnailUrl: '', rows: [] });
+    const g = map.get(r.ad);
+    if (!g.thumbnailUrl && r.thumbnailUrl) g.thumbnailUrl = r.thumbnailUrl;
+    g.rows.push(r);
+  });
+  return Array.from(map.values()).map(g => {
+    const s = sumRows(g.rows);
+    return Object.assign({ ad: g.ad, account: g.account, thumbnailUrl: g.thumbnailUrl }, s, {
+      ctr: safeDiv(s.clicks, s.impressions),
+      cpm: safeDiv(s.spend, s.impressions) * 1000,
+      frequency: safeDiv(s.impressions, s.reach),
+      hookRate: safeDiv(s.videoViews, s.impressions),
+      bounceRate: safeDiv(s.bounced, s.sessions),
+      cpsch: safeDiv(s.spend, s.mqlYes)
+    });
+  });
+}
+
+// ===================== RENDER: BIG NUMBERS =====================
+
+function renderBigNumbers(rows) {
+  const s = sumRows(rows);
+  document.getElementById('bn-spend').textContent = fmtMoney(s.spend);
+  document.getElementById('bn-clicks').textContent = fmtInt(s.clicks);
+  document.getElementById('bn-frequency').textContent = fmtDec(safeDiv(s.impressions, s.reach));
+  document.getElementById('bn-real-mql').textContent = fmtInt(s.mqlYes);
+  document.getElementById('bn-spam').textContent = fmtInt(s.mqlNo);
+  document.getElementById('bn-cpsch').textContent = fmtMoney(safeDiv(s.spend, s.mqlYes));
+
+  const compareEl = document.getElementById('compare-range-label');
+  const deltaKeys = ['spend', 'clicks', 'frequency', 'real-mql', 'spam', 'cpsch'];
+
+  if (!filterState.compare || !filterState.dateFrom || !filterState.dateTo) {
+    deltaKeys.forEach(k => {
+      const el = document.getElementById('bn-' + k + '-delta');
+      if (el) { el.textContent = ''; el.className = 'bignum-delta'; }
+    });
+    if (compareEl) compareEl.textContent = '';
+    return;
+  }
+
+  let prevFrom, prevTo;
+  if (filterState.compareMode === 'custom') {
+    if (!filterState.compareCustomFrom || !filterState.compareCustomTo) {
+      deltaKeys.forEach(k => {
+        const el = document.getElementById('bn-' + k + '-delta');
+        if (el) { el.textContent = ''; el.className = 'bignum-delta'; }
+      });
+      if (compareEl) compareEl.textContent = 'Pick a custom range to compare against';
+      return;
+    }
+    prevFrom = filterState.compareCustomFrom;
+    prevTo = filterState.compareCustomTo;
+  } else {
+    const prevRange = getPreviousRange(filterState.dateFrom, filterState.dateTo);
+    prevFrom = prevRange.prevFrom;
+    prevTo = prevRange.prevTo;
+  }
+  const p = sumRows(getFilteredRowsForRange(prevFrom, prevTo));
+  const curFreq = safeDiv(s.impressions, s.reach);
+  const prevFreq = safeDiv(p.impressions, p.reach);
+  const curCpsch = safeDiv(s.spend, s.mqlYes);
+  const prevCpsch = safeDiv(p.spend, p.mqlYes);
+
+  setDelta('spend', s.spend, p.spend, 'neutral');
+  setDelta('clicks', s.clicks, p.clicks, 'up-good');
+  setDelta('frequency', curFreq, prevFreq, 'up-good');
+  setDelta('real-mql', s.mqlYes, p.mqlYes, 'up-good');
+  setDelta('spam', s.mqlNo, p.mqlNo, 'up-bad');
+  setDelta('cpsch', curCpsch, prevCpsch, 'up-bad');
+
+  if (compareEl) compareEl.textContent = 'Comparing to ' + prevFrom + ' – ' + prevTo;
+}
+
+function setDelta(key, curr, prev, direction) {
+  const el = document.getElementById('bn-' + key + '-delta');
+  if (!el) return;
+  if (!prev) {
+    el.textContent = curr ? 'new' : '—';
+    el.className = 'bignum-delta delta-neutral';
+    return;
+  }
+  const pct = (curr - prev) / prev;
+  const sign = pct >= 0 ? '+' : '';
+  el.textContent = sign + (pct * 100).toLocaleString('en-US', { maximumFractionDigits: 1 }) + '% vs prior';
+
+  let cls = 'delta-neutral';
+  if (direction === 'up-good') cls = pct > 0 ? 'delta-good' : pct < 0 ? 'delta-bad' : 'delta-neutral';
+  else if (direction === 'up-bad') cls = pct > 0 ? 'delta-bad' : pct < 0 ? 'delta-good' : 'delta-neutral';
+  el.className = 'bignum-delta ' + cls;
+}
+
+// ===================== RENDER: SPEND / CPSCH =====================
+
+let granularity = 'daily';
+
+function isoWeekStart(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const day = d.getUTCDay() || 7; // lunes=1..domingo=7
+  d.setUTCDate(d.getUTCDate() - day + 1);
+  return d.toISOString().substring(0, 10);
+}
+
+function renderSpendChart(rows) {
+  const buckets = new Map();
+  rows.forEach(r => {
+    const key = granularity === 'weekly' ? isoWeekStart(r.date) : r.date;
+    const prev = buckets.get(key) || { spend: 0, mqlYes: 0 };
+    prev.spend += r.spend || 0; prev.mqlYes += r.mqlYes || 0;
+    buckets.set(key, prev);
+  });
+  const labels = Array.from(buckets.keys()).sort();
+  const spendData = labels.map(k => buckets.get(k).spend);
+  const cpschData = labels.map(k => safeDiv(buckets.get(k).spend, buckets.get(k).mqlYes));
+
+  const css = getComputedStyle(document.documentElement);
+  const s1 = css.getPropertyValue('--series-1').trim();
+  const s2 = css.getPropertyValue('--series-2').trim();
+  const grid = css.getPropertyValue('--gridline').trim();
+  const muted = css.getPropertyValue('--text-muted').trim();
+
+  // Chart.js's dataset `order` no alcanza para forzar la línea siempre arriba en un combo
+  // bar+line -- este plugin redibuja el dataset de línea (índice 1) DESPUÉS de todo lo demás,
+  // así queda garantizado por encima de las barras sin depender de ese comportamiento.
+  const lineOnTopPlugin = {
+    id: 'lineOnTop',
+    afterDatasetsDraw(chart) {
+      const meta = chart.getDatasetMeta(1);
+      if (meta && meta.controller) meta.controller.draw();
+    }
+  };
+
+  if (charts.spend) charts.spend.destroy();
+  charts.spend = new Chart(document.getElementById('chart-spend'), {
+    plugins: [lineOnTopPlugin],
+    data: {
+      labels,
+      datasets: [
+        { type: 'bar', label: 'Spend', data: spendData, backgroundColor: s1, borderRadius: 4, maxBarThickness: 28, yAxisID: 'y' },
+        { type: 'line', label: 'Cost per Real MQL', data: cpschData, borderColor: s2, backgroundColor: s2, borderWidth: 2, pointRadius: 3, pointBackgroundColor: s2, tension: 0.15, yAxisID: 'y1' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ctx.dataset.label + ': ' + fmtMoney(ctx.raw)
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: muted, maxRotation: 0, autoSkip: true } },
+        y: {
+          position: 'left', beginAtZero: true, min: 0,
+          grid: { color: grid }, ticks: { color: muted, callback: (v) => fmtMoney(v) },
+          title: { display: true, text: 'Spend', color: muted }
+        },
+        y1: {
+          position: 'right', beginAtZero: true, min: 0,
+          grid: { display: false }, ticks: { color: muted, callback: (v) => fmtMoney(v) },
+          title: { display: true, text: 'Cost per Real MQL', color: muted }
+        }
+      }
+    }
+  });
+}
+
+function baseChartOptions(grid, muted, tooltipFmt) {
+  return {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (ctx) => tooltipFmt(ctx.raw) } }
+    },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: muted, maxRotation: 0, autoSkip: true } },
+      y: { beginAtZero: true, min: 0, grid: { color: grid }, ticks: { color: muted, callback: (v) => tooltipFmt(v) } }
+    }
+  };
+}
+
+// ===================== RENDER: CREATIVE TABLE =====================
+
+let tableSortKey = 'spend', tableSortDir = -1;
+
+function renderCreativeTable(rows) {
+  const agg = aggregateByAd(rows);
+  agg.sort((a, b) => {
+    const va = a[tableSortKey], vb = b[tableSortKey];
+    if (typeof va === 'string') return va.localeCompare(vb) * tableSortDir * -1;
+    return (va - vb) * tableSortDir;
+  });
+
+  const tbody = document.getElementById('creative-table-body');
+  tbody.innerHTML = agg.map(r => `
+    <tr>
+      <td>${r.thumbnailUrl ? `<a href="${escapeHtml(r.thumbnailUrl)}" target="_blank" rel="noopener"><img class="creative-thumb" src="${escapeHtml(r.thumbnailUrl)}" alt=""></a>` : ''}</td>
+      <td>${escapeHtml(r.ad)}</td>
+      <td>${escapeHtml(r.account)}</td>
+      <td>${fmtMoney(r.spend)}</td>
+      <td>${fmtInt(r.impressions)}</td>
+      <td>${fmtInt(r.clicks)}</td>
+      <td>${fmtPct(r.ctr)}</td>
+      <td>${fmtMoney(r.cpm)}</td>
+      <td>${fmtInt(r.reach)}</td>
+      <td>${fmtDec(r.frequency)}</td>
+      <td>${fmtInt(r.lpViews)}</td>
+      <td>${fmtInt(r.registrations)}</td>
+      <td>${fmtInt(r.mqlYes)}</td>
+      <td>${fmtInt(r.mqlNo)}</td>
+      <td>${fmtInt(r.mqlBlank)}</td>
+      <td>${fmtMoney(r.cpsch)}</td>
+      <td>${fmtPct(r.hookRate)}</td>
+      <td>${fmtPct(r.bounceRate)}</td>
+    </tr>
+  `).join('');
+
+  document.querySelectorAll('#creative-table th').forEach(th => {
+    th.classList.toggle('sorted', th.dataset.key === tableSortKey);
+  });
+  document.getElementById('creative-table-meta').textContent = agg.length + ' ads';
+}
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+document.querySelectorAll('#creative-table th[data-key]').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (tableSortKey === key) tableSortDir *= -1; else { tableSortKey = key; tableSortDir = -1; }
+    renderCreativeTable(getFilteredRows());
+  });
+});
+
+// ===================== RENDER: SCATTER =====================
+
+function populateScatterSelects() {
+  const xSel = document.getElementById('scatter-x');
+  const ySel = document.getElementById('scatter-y');
+  METRIC_OPTIONS.forEach(m => {
+    xSel.appendChild(new Option(m.label, m.key));
+    ySel.appendChild(new Option(m.label, m.key));
+  });
+  xSel.value = 'spend';
+  ySel.value = 'bounceRate';
+  xSel.addEventListener('change', () => renderScatter(getFilteredRows()));
+  ySel.addEventListener('change', () => renderScatter(getFilteredRows()));
+}
+
+function renderScatter(rows) {
+  const xKey = document.getElementById('scatter-x').value;
+  const yKey = document.getElementById('scatter-y').value;
+  const xMeta = METRIC_OPTIONS.find(m => m.key === xKey);
+  const yMeta = METRIC_OPTIONS.find(m => m.key === yKey);
+  const agg = aggregateByAd(rows).filter(r => r.impressions > 0);
+
+  const css = getComputedStyle(document.documentElement);
+  const s1 = css.getPropertyValue('--series-1').trim();
+  const grid = css.getPropertyValue('--gridline').trim();
+  const muted = css.getPropertyValue('--text-muted').trim();
+
+  if (charts.scatter) charts.scatter.destroy();
+  charts.scatter = new Chart(document.getElementById('chart-scatter'), {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        data: agg.map(r => ({ x: r[xKey], y: r[yKey], ad: r.ad })),
+        backgroundColor: s1, borderColor: s1, pointRadius: 6, pointHoverRadius: 8
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const p = ctx.raw;
+              return p.ad + ': ' + xMeta.label + '=' + fmtByType(p.x, xMeta.fmt) + ', ' + yMeta.label + '=' + fmtByType(p.y, yMeta.fmt);
+            }
+          }
+        }
+      },
+      scales: {
+        x: { title: { display: true, text: xMeta.label, color: muted }, grid: { color: grid }, ticks: { color: muted, callback: (v) => fmtByType(v, xMeta.fmt) } },
+        y: { title: { display: true, text: yMeta.label, color: muted }, grid: { color: grid }, ticks: { color: muted, callback: (v) => fmtByType(v, yMeta.fmt) } }
+      }
+    }
+  });
+}
+
+// ===================== RENDER: FUNNEL =====================
+
+function renderFunnel(rows) {
+  const s = sumRows(rows);
+  const stages = [
+    { label: 'Impressions', value: s.impressions, color: 'var(--funnel-1)' },
+    { label: 'Clicks', value: s.clicks, color: 'var(--funnel-2)' },
+    { label: 'LP Views', value: s.lpViews, color: 'var(--funnel-3)' },
+    { label: 'Registrations (all MQLs)', value: s.mqlYes + s.mqlNo + s.mqlBlank, color: 'var(--funnel-4)' },
+    { label: 'Real MQL', value: s.mqlYes, color: 'var(--funnel-5)' }
+  ];
+  const max = stages[0].value || 1;
+  const body = document.getElementById('funnel-body');
+  body.innerHTML = stages.map((st, i) => {
+    const widthPct = Math.max(2, (st.value / max) * 100);
+    const pctOfPrev = i === 0 ? null : safeDiv(st.value, stages[i - 1].value);
+    return `
+      <div class="funnel-row">
+        <div class="funnel-label">${st.label}</div>
+        <div class="funnel-bar-track"><div class="funnel-bar" style="width:${widthPct}%; background:${st.color}"></div></div>
+        <div class="funnel-value">${fmtInt(st.value)}</div>
+        <div class="funnel-pct">${pctOfPrev == null ? '' : fmtPct(pctOfPrev)}</div>
+      </div>`;
+  }).join('');
+}
+
+// ===================== ORCHESTRATION =====================
+
+function renderAll() {
+  const rows = getFilteredRows();
+  renderBigNumbers(rows);
+  renderSpendChart(rows);
+  renderCreativeTable(rows);
+  renderScatter(rows);
+  renderFunnel(rows);
+}
+
+function setupDateFilters() {
+  const dates = uniqueSorted(UNIFIED.map(r => r.date));
+  const min = dates[0], max = dates[dates.length - 1];
+  const fromEl = document.getElementById('f-date-from');
+  const toEl = document.getElementById('f-date-to');
+  fromEl.min = min; fromEl.max = max; fromEl.value = min;
+  toEl.min = min; toEl.max = max; toEl.value = max;
+  filterState.dateFrom = min; filterState.dateTo = max;
+  fromEl.addEventListener('change', () => { filterState.dateFrom = fromEl.value; renderAll(); });
+  toEl.addEventListener('change', () => { filterState.dateTo = toEl.value; renderAll(); });
+}
+
+document.getElementById('gran-daily').addEventListener('click', () => {
+  granularity = 'daily';
+  document.getElementById('gran-daily').classList.add('active');
+  document.getElementById('gran-weekly').classList.remove('active');
+  renderSpendChart(getFilteredRows());
+});
+document.getElementById('gran-weekly').addEventListener('click', () => {
+  granularity = 'weekly';
+  document.getElementById('gran-weekly').classList.add('active');
+  document.getElementById('gran-daily').classList.remove('active');
+  renderSpendChart(getFilteredRows());
+});
+document.getElementById('btn-reset').addEventListener('click', () => {
+  filterState.account.clear(); filterState.campaign.clear(); filterState.adset.clear();
+  filterState.compare = false;
+  filterState.compareMode = 'previous';
+  filterState.compareCustomFrom = null;
+  filterState.compareCustomTo = null;
+  document.getElementById('f-compare').checked = false;
+  document.getElementById('f-compare-mode').value = 'previous';
+  document.getElementById('f-compare-from').value = '';
+  document.getElementById('f-compare-to').value = '';
+  updateCompareControlsVisibility();
+  setupDateFilters();
+  refreshFilterOptions();
+  renderAll();
+});
+
+function updateCompareControlsVisibility() {
+  document.getElementById('compare-mode-group').style.display = filterState.compare ? '' : 'none';
+  const showCustom = filterState.compare && filterState.compareMode === 'custom';
+  document.getElementById('compare-custom-from-group').style.display = showCustom ? '' : 'none';
+  document.getElementById('compare-custom-to-group').style.display = showCustom ? '' : 'none';
+}
+
+document.getElementById('f-compare').addEventListener('change', (e) => {
+  filterState.compare = e.target.checked;
+  updateCompareControlsVisibility();
+  renderBigNumbers(getFilteredRows());
+});
+document.getElementById('f-compare-mode').addEventListener('change', (e) => {
+  filterState.compareMode = e.target.value;
+  updateCompareControlsVisibility();
+  renderBigNumbers(getFilteredRows());
+});
+document.getElementById('f-compare-from').addEventListener('change', (e) => {
+  filterState.compareCustomFrom = e.target.value || null;
+  renderBigNumbers(getFilteredRows());
+});
+document.getElementById('f-compare-to').addEventListener('change', (e) => {
+  filterState.compareCustomTo = e.target.value || null;
+  renderBigNumbers(getFilteredRows());
+});
+
+async function init() {
+  try {
+    await loadAll();
+    if (UNIFIED.length === 0) throw new Error('No rows in Meta_Raw yet.');
+    setupDateFilters();
+    refreshFilterOptions();
+    populateScatterSelects();
+    document.getElementById('app-status').style.display = 'none';
+    document.getElementById('app-body').style.display = 'block';
+    renderAll();
+  } catch (err) {
+    console.error(err);
+    document.getElementById('app-status').textContent = 'Error loading data: ' + err.message;
+    document.getElementById('app-status').className = 'error';
+  }
+}
+
+init();
+</script>
+</body>
+</html>
