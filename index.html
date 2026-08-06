@@ -199,15 +199,6 @@
   .chart-wrap.small { height: 160px; }
   .chart-legend-label { font-size: 12px; color: var(--text-secondary); margin: 0 0 4px; display: flex; align-items: center; gap: 6px; font-weight: 700; }
   .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
-  /* dos charts de un solo eje en vez de un combo bar+line con doble eje -- más fácil de
-     leer de un vistazo, cada métrica con su propia escala en vez de superpuestas */
-  .chart-split { display: flex; gap: 28px; }
-  .chart-pane { flex: 1; min-width: 0; }
-  .chart-pane + .chart-pane { border-left: 1px solid var(--gridline); padding-left: 28px; }
-  @media (max-width: 720px) {
-    .chart-split { flex-direction: column; gap: 20px; }
-    .chart-pane + .chart-pane { border-left: none; padding-left: 0; border-top: 1px solid var(--gridline); padding-top: 20px; }
-  }
 
   /* ---- table ---- */
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; table-layout: fixed; }
@@ -424,29 +415,17 @@
   </div>
 
   <div class="card">
-    <div class="chart-title-row" style="margin-bottom:16px;">
-      <span>Performance over time</span>
+    <h2 class="chart-title-row">
+      <select id="spend-metric-1" class="inline-metric-select"></select>
+      <span>and</span>
+      <select id="spend-metric-2" class="inline-metric-select"></select>
       <span class="chart-toolbar" style="margin-left:auto;">
         <button id="gran-daily" class="active">Daily</button>
         <button id="gran-weekly">Weekly</button>
       </span>
-    </div>
-    <div class="chart-split">
-      <div class="chart-pane">
-        <div class="chart-title-row">
-          <select id="spend-metric-1" class="inline-metric-select"></select>
-        </div>
-        <p class="chart-legend-label" id="spend-chart-legend-1"></p>
-        <div class="chart-wrap" style="height:260px;"><canvas id="chart-spend-1"></canvas></div>
-      </div>
-      <div class="chart-pane">
-        <div class="chart-title-row">
-          <select id="spend-metric-2" class="inline-metric-select"></select>
-        </div>
-        <p class="chart-legend-label" id="spend-chart-legend-2"></p>
-        <div class="chart-wrap" style="height:260px;"><canvas id="chart-spend-2"></canvas></div>
-      </div>
-    </div>
+    </h2>
+    <p class="chart-legend-label" id="spend-chart-legend"></p>
+    <div class="chart-wrap" style="height:320px;"><canvas id="chart-spend"></canvas></div>
   </div>
 
   <div class="card">
@@ -1095,31 +1074,62 @@ function renderSpendChart(rows) {
   const data1 = labels.map(k => metric1.compute(buckets.get(k)));
   const data2 = labels.map(k => metric2.compute(buckets.get(k)));
 
+  const legendEl = document.getElementById('spend-chart-legend');
+  legendEl.innerHTML = '<span class="swatch" style="background:var(--series-1)"></span>' + metric1.label + ' (left axis)'
+    + '&nbsp;&nbsp;<span class="swatch" style="background:var(--series-2)"></span>' + metric2.label + ' (right axis)';
+
   const css = getComputedStyle(document.documentElement);
   const s1 = css.getPropertyValue('--series-1').trim();
   const s2 = css.getPropertyValue('--series-2').trim();
   const grid = css.getPropertyValue('--gridline').trim();
   const muted = css.getPropertyValue('--text-muted').trim();
 
-  document.getElementById('spend-chart-legend-1').innerHTML =
-    '<span class="swatch" style="background:' + s1 + '"></span>' + metric1.label;
-  document.getElementById('spend-chart-legend-2').innerHTML =
-    '<span class="swatch" style="background:' + s2 + '"></span>' + metric2.label;
+  // Chart.js's dataset `order` no alcanza para forzar la línea siempre arriba en un combo
+  // bar+line -- este plugin redibuja el dataset de línea (índice 1) DESPUÉS de todo lo demás,
+  // así queda garantizado por encima de las barras sin depender de ese comportamiento.
+  const lineOnTopPlugin = {
+    id: 'lineOnTop',
+    afterDatasetsDraw(chart) {
+      const meta = chart.getDatasetMeta(1);
+      if (meta && meta.controller) meta.controller.draw();
+    }
+  };
 
-  // dos charts de un solo eje en vez de un combo bar+line con doble eje -- evita el
-  // anti-patrón de comparar 2 escalas superpuestas, cada métrica se lee sin ambigüedad
-  if (charts.spend1) charts.spend1.destroy();
-  charts.spend1 = new Chart(document.getElementById('chart-spend-1'), {
-    type: 'bar',
-    data: { labels, datasets: [{ label: metric1.label, data: data1, backgroundColor: s1, borderRadius: 4, maxBarThickness: 28 }] },
-    options: baseChartOptions(grid, muted, (v) => fmtByType(v, metric1.fmt))
-  });
-
-  if (charts.spend2) charts.spend2.destroy();
-  charts.spend2 = new Chart(document.getElementById('chart-spend-2'), {
-    type: 'line',
-    data: { labels, datasets: [{ label: metric2.label, data: data2, borderColor: s2, backgroundColor: s2, borderWidth: 2, pointRadius: 3, pointBackgroundColor: s2, tension: 0.15 }] },
-    options: baseChartOptions(grid, muted, (v) => fmtByType(v, metric2.fmt))
+  if (charts.spend) charts.spend.destroy();
+  charts.spend = new Chart(document.getElementById('chart-spend'), {
+    plugins: [lineOnTopPlugin],
+    data: {
+      labels,
+      datasets: [
+        // barra semitransparente (60% opacidad) para que la línea se lea encima sin quedar tapada
+        { type: 'bar', label: metric1.label, data: data1, backgroundColor: s1 + '99', borderRadius: 4, maxBarThickness: 28, yAxisID: 'y' },
+        { type: 'line', label: metric2.label, data: data2, borderColor: s2, backgroundColor: s2, borderWidth: 2, pointRadius: 3, pointBackgroundColor: s2, tension: 0.15, yAxisID: 'y1' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ctx.dataset.label + ': ' + fmtByType(ctx.raw, ctx.datasetIndex === 0 ? metric1.fmt : metric2.fmt)
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: muted, maxRotation: 0, autoSkip: true } },
+        y: {
+          position: 'left', beginAtZero: true, min: 0,
+          grid: { color: grid }, ticks: { color: muted, callback: (v) => fmtByType(v, metric1.fmt) },
+          title: { display: true, text: metric1.label, color: muted }
+        },
+        y1: {
+          position: 'right', beginAtZero: true, min: 0,
+          grid: { display: false }, ticks: { color: muted, callback: (v) => fmtByType(v, metric2.fmt) },
+          title: { display: true, text: metric2.label, color: muted }
+        }
+      }
+    }
   });
 }
 
