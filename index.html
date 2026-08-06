@@ -359,7 +359,7 @@
         <div class="bignum-delta" id="bn-ctr-delta"></div>
       </div>
       <div class="bignum-tile">
-        <div class="bignum-label">Cost per 1K Reached</div>
+        <div class="bignum-label">Cost per 1000 Meta Accounts</div>
         <div class="bignum-value" id="bn-cp1kreach">–</div>
         <div class="bignum-delta" id="bn-cp1kreach-delta"></div>
       </div>
@@ -529,9 +529,11 @@ const CHART_METRICS = {
   bounceRate: { label: 'Bounce Rate', fmt: 'pct', compute: s => safeDiv(s.bounced, s.sessions) },
   mqlYes:     { label: 'Real MQLs', fmt: 'int', compute: s => s.mqlYes },
   cpsch:      { label: 'Cost per Real MQL', fmt: 'money', compute: s => safeDiv(s.spend, s.mqlYes) },
-  mqlNo:      { label: 'Spam', fmt: 'int', compute: s => s.mqlNo }
+  mqlNo:      { label: 'Spam', fmt: 'int', compute: s => s.mqlNo },
+  mqlQualified: { label: 'Qualified MQLs', fmt: 'int', compute: s => s.mqlQualified },
+  cpqmql:     { label: 'Cost per Qualified MQL', fmt: 'money', compute: s => safeDiv(s.spend, s.mqlQualified) }
 };
-const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'reach', 'frequency', 'bounceRate', 'mqlYes', 'cpsch', 'mqlNo'];
+const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'reach', 'frequency', 'bounceRate', 'mqlYes', 'cpsch', 'mqlNo', 'mqlQualified', 'cpqmql'];
 
 let UNIFIED = []; // flat rows at Date x Account x Campaign x AdSet x Ad grain
 let charts = {};
@@ -1044,10 +1046,10 @@ function renderSpendChart(rows) {
   const buckets = new Map();
   rows.forEach(r => {
     const key = granularity === 'weekly' ? isoWeekStart(r.date) : r.date;
-    const prev = buckets.get(key) || { spend: 0, impressions: 0, clicks: 0, reach: 0, bounced: 0, sessions: 0, mqlYes: 0, mqlNo: 0 };
+    const prev = buckets.get(key) || { spend: 0, impressions: 0, clicks: 0, reach: 0, bounced: 0, sessions: 0, mqlYes: 0, mqlNo: 0, mqlQualified: 0 };
     prev.spend += r.spend || 0; prev.impressions += r.impressions || 0; prev.clicks += r.clicks || 0;
     prev.reach += r.reach || 0; prev.bounced += r.bounced || 0; prev.sessions += r.sessions || 0;
-    prev.mqlYes += r.mqlYes || 0; prev.mqlNo += r.mqlNo || 0;
+    prev.mqlYes += r.mqlYes || 0; prev.mqlNo += r.mqlNo || 0; prev.mqlQualified += r.mqlQualified || 0;
     buckets.set(key, prev);
   });
   const labels = Array.from(buckets.keys()).sort();
