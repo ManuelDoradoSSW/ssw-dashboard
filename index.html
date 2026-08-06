@@ -20,6 +20,7 @@
     --series-2:       #008300; /* green -- cost per real mql (branding SSW) */
     --good:           #0ca30c;
     --critical:       #d03b3b;
+    --accent:         #8a6a00; /* amber -- reserved for headline numbers/brand, not body text */
     --highlight-bg:   rgba(74,58,167,0.14);
     --funnel-1: #c3b6ec; --funnel-2: #9f8bdd; --funnel-3: #4a3aa7; --funnel-4: #3c2f89; --funnel-5: #241c52;
   }
@@ -28,7 +29,7 @@
       color-scheme: dark;
       --surface-1:      #1a1a19;
       --surface-2:      #0d0d0d;
-      --text-primary:   #E6C301;
+      --text-primary:   #EDEAE0;
       --text-secondary: #c3c2b7;
       --text-muted:     #898781;
       --gridline:       #2c2c2a;
@@ -38,6 +39,7 @@
       --series-2:       #008300;
       --good:           #0ca30c;
       --critical:       #e66767;
+      --accent:         #E6C301;
       --highlight-bg:   rgba(144,133,233,0.22);
       --funnel-1: #241c52; --funnel-2: #3c2f89; --funnel-3: #9085e9; --funnel-4: #9f8bdd; --funnel-5: #c3b6ec;
     }
@@ -59,6 +61,7 @@
     --series-2:       #008300;
     --good:           #0ca30c;
     --critical:       #d03b3b;
+    --accent:         #8a6a00;
     --highlight-bg:   rgba(74,58,167,0.14);
     --funnel-1: #c3b6ec; --funnel-2: #9f8bdd; --funnel-3: #4a3aa7; --funnel-4: #3c2f89; --funnel-5: #241c52;
   }
@@ -66,7 +69,7 @@
     color-scheme: dark;
     --surface-1:      #1a1a19;
     --surface-2:      #0d0d0d;
-    --text-primary:   #E6C301;
+    --text-primary:   #EDEAE0;
     --text-secondary: #c3c2b7;
     --text-muted:     #898781;
     --gridline:       #2c2c2a;
@@ -76,6 +79,7 @@
     --series-2:       #008300;
     --good:           #0ca30c;
     --critical:       #e66767;
+    --accent:         #E6C301;
     --highlight-bg:   rgba(144,133,233,0.22);
     --funnel-1: #241c52; --funnel-2: #3c2f89; --funnel-3: #9085e9; --funnel-4: #9f8bdd; --funnel-5: #c3b6ec;
   }
@@ -89,13 +93,13 @@
     font-size: 14px;
     padding: 24px;
   }
-  h1 { font-size: 20px; margin: 0 0 4px; }
+  h1 { font-size: 20px; margin: 0 0 4px; color: var(--accent); }
   h2 { font-size: 15px; margin: 0 0 16px; color: var(--text-primary); }
   .chart-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .chart-title-row span { font-size: 15px; }
   .inline-metric-select {
-    background: transparent; border: none; border-bottom: 1px dashed var(--text-primary);
-    color: var(--text-primary); font-family: inherit; font-size: 15px; font-weight: 700;
+    background: transparent; border: none; border-bottom: 1px dashed var(--accent);
+    color: var(--accent); font-family: inherit; font-size: 15px; font-weight: 700;
     padding: 0 4px 2px 0; cursor: pointer; -webkit-appearance: none; appearance: none;
   }
   .inline-metric-select:hover, .inline-metric-select:focus { border-bottom-style: solid; outline: none; }
@@ -148,7 +152,7 @@
   input[type=date], select, button {
     font-family: inherit; font-size: 13px;
     background: var(--surface-1); color: var(--text-primary);
-    border: 1px solid var(--border); border-radius: 6px;
+    border: 1px solid var(--border); border-radius: 8px;
     padding: 7px 10px;
   }
   button { cursor: pointer; }
@@ -171,10 +175,16 @@
   .msel-item input { margin: 0; }
 
   /* ---- big numbers ---- */
-  .bignum-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px 12px; }
+  .bignum-group { margin-bottom: 28px; }
+  .bignum-group:last-child { margin-bottom: 0; }
+  .bignum-group-label {
+    font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em;
+    font-weight: 700; margin: 0 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--gridline);
+  }
+  .bignum-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px 16px; }
   .bignum-tile { padding: 4px; }
-  .bignum-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; white-space: nowrap; }
-  .bignum-value { font-size: 24px; font-weight: 600; font-variant-numeric: proportional-nums; }
+  .bignum-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; line-height: 1.3; min-height: 2.6em; }
+  .bignum-value { font-size: 24px; font-weight: 600; font-variant-numeric: proportional-nums; color: var(--accent); }
   .bignum-delta { font-size: 13px; font-weight: 600; margin-top: 4px; min-height: 16px; }
   .bignum-delta.delta-good { color: var(--good); }
   .bignum-delta.delta-bad { color: var(--critical); }
@@ -189,6 +199,15 @@
   .chart-wrap.small { height: 160px; }
   .chart-legend-label { font-size: 12px; color: var(--text-secondary); margin: 0 0 4px; display: flex; align-items: center; gap: 6px; font-weight: 700; }
   .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  /* dos charts de un solo eje en vez de un combo bar+line con doble eje -- más fácil de
+     leer de un vistazo, cada métrica con su propia escala en vez de superpuestas */
+  .chart-split { display: flex; gap: 28px; }
+  .chart-pane { flex: 1; min-width: 0; }
+  .chart-pane + .chart-pane { border-left: 1px solid var(--gridline); padding-left: 28px; }
+  @media (max-width: 720px) {
+    .chart-split { flex-direction: column; gap: 20px; }
+    .chart-pane + .chart-pane { border-left: none; padding-left: 0; border-top: 1px solid var(--gridline); padding-top: 20px; }
+  }
 
   /* ---- table ---- */
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; table-layout: fixed; }
@@ -337,77 +356,97 @@
 
   <div class="card">
     <h2>Big Numbers</h2>
-    <div class="bignum-row">
-      <div class="bignum-tile">
-        <div class="bignum-label">Spend</div>
-        <div class="bignum-value" id="bn-spend">–</div>
-        <div class="bignum-delta" id="bn-spend-delta"></div>
+    <div class="bignum-group">
+      <p class="bignum-group-label">Media</p>
+      <div class="bignum-row">
+        <div class="bignum-tile">
+          <div class="bignum-label">Spend</div>
+          <div class="bignum-value" id="bn-spend">–</div>
+          <div class="bignum-delta" id="bn-spend-delta"></div>
+        </div>
+        <div class="bignum-tile">
+          <div class="bignum-label">Clicks</div>
+          <div class="bignum-value" id="bn-clicks">–</div>
+          <div class="bignum-delta" id="bn-clicks-delta"></div>
+        </div>
+        <div class="bignum-tile">
+          <div class="bignum-label">CPM</div>
+          <div class="bignum-value" id="bn-cpm">–</div>
+          <div class="bignum-delta" id="bn-cpm-delta"></div>
+        </div>
+        <div class="bignum-tile">
+          <div class="bignum-label">CTR</div>
+          <div class="bignum-value" id="bn-ctr">–</div>
+          <div class="bignum-delta" id="bn-ctr-delta"></div>
+        </div>
+        <div class="bignum-tile">
+          <div class="bignum-label">Cost per 1000 Meta Accounts</div>
+          <div class="bignum-value" id="bn-cp1kreach">–</div>
+          <div class="bignum-delta" id="bn-cp1kreach-delta"></div>
+        </div>
+        <div class="bignum-tile">
+          <div class="bignum-label">Frequency (estimated)</div>
+          <div class="bignum-value" id="bn-frequency">–</div>
+          <div class="bignum-delta" id="bn-frequency-delta"></div>
+        </div>
       </div>
-      <div class="bignum-tile">
-        <div class="bignum-label">Clicks</div>
-        <div class="bignum-value" id="bn-clicks">–</div>
-        <div class="bignum-delta" id="bn-clicks-delta"></div>
-      </div>
-      <div class="bignum-tile">
-        <div class="bignum-label">CPM</div>
-        <div class="bignum-value" id="bn-cpm">–</div>
-        <div class="bignum-delta" id="bn-cpm-delta"></div>
-      </div>
-      <div class="bignum-tile">
-        <div class="bignum-label">CTR</div>
-        <div class="bignum-value" id="bn-ctr">–</div>
-        <div class="bignum-delta" id="bn-ctr-delta"></div>
-      </div>
-      <div class="bignum-tile">
-        <div class="bignum-label">Cost per 1000 Meta Accounts</div>
-        <div class="bignum-value" id="bn-cp1kreach">–</div>
-        <div class="bignum-delta" id="bn-cp1kreach-delta"></div>
-      </div>
-      <div class="bignum-tile">
-        <div class="bignum-label">Frequency (estimated)</div>
-        <div class="bignum-value" id="bn-frequency">–</div>
-        <div class="bignum-delta" id="bn-frequency-delta"></div>
-      </div>
-      <div class="bignum-tile">
-        <div class="bignum-label">Real MQLs (iClosed)</div>
-        <div class="bignum-value" id="bn-real-mql">–</div>
-        <div class="bignum-delta" id="bn-real-mql-delta"></div>
-      </div>
-      <div class="bignum-tile">
-        <div class="bignum-label">Spam (iClosed)</div>
-        <div class="bignum-value" id="bn-spam">–</div>
-        <div class="bignum-delta" id="bn-spam-delta"></div>
-      </div>
-      <div class="bignum-tile">
-        <div class="bignum-label">Cost per Real MQL</div>
-        <div class="bignum-value" id="bn-cpsch">–</div>
-        <div class="bignum-delta" id="bn-cpsch-delta"></div>
-      </div>
-      <div class="bignum-tile">
-        <div class="bignum-label">Qualified MQLs (iClosed)</div>
-        <div class="bignum-value" id="bn-qualified-mql">–</div>
-        <div class="bignum-delta" id="bn-qualified-mql-delta"></div>
-      </div>
-      <div class="bignum-tile">
-        <div class="bignum-label">Cost per Qualified MQL</div>
-        <div class="bignum-value" id="bn-cpqmql">–</div>
-        <div class="bignum-delta" id="bn-cpqmql-delta"></div>
+    </div>
+    <div class="bignum-group">
+      <p class="bignum-group-label">Lead Quality (iClosed)</p>
+      <div class="bignum-row">
+        <div class="bignum-tile">
+          <div class="bignum-label">Real MQLs</div>
+          <div class="bignum-value" id="bn-real-mql">–</div>
+          <div class="bignum-delta" id="bn-real-mql-delta"></div>
+        </div>
+        <div class="bignum-tile">
+          <div class="bignum-label">Spam</div>
+          <div class="bignum-value" id="bn-spam">–</div>
+          <div class="bignum-delta" id="bn-spam-delta"></div>
+        </div>
+        <div class="bignum-tile">
+          <div class="bignum-label">Cost per Real MQL</div>
+          <div class="bignum-value" id="bn-cpsch">–</div>
+          <div class="bignum-delta" id="bn-cpsch-delta"></div>
+        </div>
+        <div class="bignum-tile">
+          <div class="bignum-label">Qualified MQLs</div>
+          <div class="bignum-value" id="bn-qualified-mql">–</div>
+          <div class="bignum-delta" id="bn-qualified-mql-delta"></div>
+        </div>
+        <div class="bignum-tile">
+          <div class="bignum-label">Cost per Qualified MQL</div>
+          <div class="bignum-value" id="bn-cpqmql">–</div>
+          <div class="bignum-delta" id="bn-cpqmql-delta"></div>
+        </div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h2 class="chart-title-row">
-      <select id="spend-metric-1" class="inline-metric-select"></select>
-      <span>and</span>
-      <select id="spend-metric-2" class="inline-metric-select"></select>
+    <div class="chart-title-row" style="margin-bottom:16px;">
+      <span>Performance over time</span>
       <span class="chart-toolbar" style="margin-left:auto;">
         <button id="gran-daily" class="active">Daily</button>
         <button id="gran-weekly">Weekly</button>
       </span>
-    </h2>
-    <p class="chart-legend-label" id="spend-chart-legend"></p>
-    <div class="chart-wrap" style="height:320px;"><canvas id="chart-spend"></canvas></div>
+    </div>
+    <div class="chart-split">
+      <div class="chart-pane">
+        <div class="chart-title-row">
+          <select id="spend-metric-1" class="inline-metric-select"></select>
+        </div>
+        <p class="chart-legend-label" id="spend-chart-legend-1"></p>
+        <div class="chart-wrap" style="height:260px;"><canvas id="chart-spend-1"></canvas></div>
+      </div>
+      <div class="chart-pane">
+        <div class="chart-title-row">
+          <select id="spend-metric-2" class="inline-metric-select"></select>
+        </div>
+        <p class="chart-legend-label" id="spend-chart-legend-2"></p>
+        <div class="chart-wrap" style="height:260px;"><canvas id="chart-spend-2"></canvas></div>
+      </div>
+    </div>
   </div>
 
   <div class="card">
@@ -1056,61 +1095,31 @@ function renderSpendChart(rows) {
   const data1 = labels.map(k => metric1.compute(buckets.get(k)));
   const data2 = labels.map(k => metric2.compute(buckets.get(k)));
 
-  const legendEl = document.getElementById('spend-chart-legend');
-  legendEl.innerHTML = '<span class="swatch" style="background:var(--series-1)"></span>' + metric1.label + ' (left axis)'
-    + '&nbsp;&nbsp;<span class="swatch" style="background:var(--series-2)"></span>' + metric2.label + ' (right axis)';
-
   const css = getComputedStyle(document.documentElement);
   const s1 = css.getPropertyValue('--series-1').trim();
   const s2 = css.getPropertyValue('--series-2').trim();
   const grid = css.getPropertyValue('--gridline').trim();
   const muted = css.getPropertyValue('--text-muted').trim();
 
-  // Chart.js's dataset `order` no alcanza para forzar la línea siempre arriba en un combo
-  // bar+line -- este plugin redibuja el dataset de línea (índice 1) DESPUÉS de todo lo demás,
-  // así queda garantizado por encima de las barras sin depender de ese comportamiento.
-  const lineOnTopPlugin = {
-    id: 'lineOnTop',
-    afterDatasetsDraw(chart) {
-      const meta = chart.getDatasetMeta(1);
-      if (meta && meta.controller) meta.controller.draw();
-    }
-  };
+  document.getElementById('spend-chart-legend-1').innerHTML =
+    '<span class="swatch" style="background:' + s1 + '"></span>' + metric1.label;
+  document.getElementById('spend-chart-legend-2').innerHTML =
+    '<span class="swatch" style="background:' + s2 + '"></span>' + metric2.label;
 
-  if (charts.spend) charts.spend.destroy();
-  charts.spend = new Chart(document.getElementById('chart-spend'), {
-    plugins: [lineOnTopPlugin],
-    data: {
-      labels,
-      datasets: [
-        { type: 'bar', label: metric1.label, data: data1, backgroundColor: s1, borderRadius: 4, maxBarThickness: 28, yAxisID: 'y' },
-        { type: 'line', label: metric2.label, data: data2, borderColor: s2, backgroundColor: s2, borderWidth: 2, pointRadius: 3, pointBackgroundColor: s2, tension: 0.15, yAxisID: 'y1' }
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => ctx.dataset.label + ': ' + fmtByType(ctx.raw, ctx.datasetIndex === 0 ? metric1.fmt : metric2.fmt)
-          }
-        }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: muted, maxRotation: 0, autoSkip: true } },
-        y: {
-          position: 'left', beginAtZero: true, min: 0,
-          grid: { color: grid }, ticks: { color: muted, callback: (v) => fmtByType(v, metric1.fmt) },
-          title: { display: true, text: metric1.label, color: muted }
-        },
-        y1: {
-          position: 'right', beginAtZero: true, min: 0,
-          grid: { display: false }, ticks: { color: muted, callback: (v) => fmtByType(v, metric2.fmt) },
-          title: { display: true, text: metric2.label, color: muted }
-        }
-      }
-    }
+  // dos charts de un solo eje en vez de un combo bar+line con doble eje -- evita el
+  // anti-patrón de comparar 2 escalas superpuestas, cada métrica se lee sin ambigüedad
+  if (charts.spend1) charts.spend1.destroy();
+  charts.spend1 = new Chart(document.getElementById('chart-spend-1'), {
+    type: 'bar',
+    data: { labels, datasets: [{ label: metric1.label, data: data1, backgroundColor: s1, borderRadius: 4, maxBarThickness: 28 }] },
+    options: baseChartOptions(grid, muted, (v) => fmtByType(v, metric1.fmt))
+  });
+
+  if (charts.spend2) charts.spend2.destroy();
+  charts.spend2 = new Chart(document.getElementById('chart-spend-2'), {
+    type: 'line',
+    data: { labels, datasets: [{ label: metric2.label, data: data2, borderColor: s2, backgroundColor: s2, borderWidth: 2, pointRadius: 3, pointBackgroundColor: s2, tension: 0.15 }] },
+    options: baseChartOptions(grid, muted, (v) => fmtByType(v, metric2.fmt))
   });
 }
 
