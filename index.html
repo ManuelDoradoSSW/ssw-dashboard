@@ -260,6 +260,7 @@
     <h1>SSW Account Dashboard — Meta Ads</h1>
     <p class="subtitle">SSW | 2026 · So Shall We USA · New Account SSW | 2026</p>
     <p class="caveat">Source: Meta_Raw + PostHog_Raw + iClosed_Raw, joined by Ad Name. Reach/Frequency summed by day can slightly overestimate over long ranges (Meta deduplicates reach within a range, not day by day). Hold Rate not available yet.</p>
+    <p class="caveat">We started tracking Real MQL on June 14, 2026 -- rows before that date may show a Qualified lead score with Real MQL blank.</p>
   </div>
 </div>
 
@@ -358,6 +359,11 @@
         <div class="bignum-delta" id="bn-ctr-delta"></div>
       </div>
       <div class="bignum-tile">
+        <div class="bignum-label">Cost per 1K Reached</div>
+        <div class="bignum-value" id="bn-cp1kreach">–</div>
+        <div class="bignum-delta" id="bn-cp1kreach-delta"></div>
+      </div>
+      <div class="bignum-tile">
         <div class="bignum-label">Frequency (estimated)</div>
         <div class="bignum-value" id="bn-frequency">–</div>
         <div class="bignum-delta" id="bn-frequency-delta"></div>
@@ -376,6 +382,16 @@
         <div class="bignum-label">Cost per Real MQL</div>
         <div class="bignum-value" id="bn-cpsch">–</div>
         <div class="bignum-delta" id="bn-cpsch-delta"></div>
+      </div>
+      <div class="bignum-tile">
+        <div class="bignum-label">Qualified MQLs (iClosed)</div>
+        <div class="bignum-value" id="bn-qualified-mql">–</div>
+        <div class="bignum-delta" id="bn-qualified-mql-delta"></div>
+      </div>
+      <div class="bignum-tile">
+        <div class="bignum-label">Cost per Qualified MQL</div>
+        <div class="bignum-value" id="bn-cpqmql">–</div>
+        <div class="bignum-delta" id="bn-cpqmql-delta"></div>
       </div>
     </div>
   </div>
@@ -623,12 +639,15 @@ async function loadAll() {
     const adCandidates = splitMultiValue(cellStr(r.c[4]));
     const mqlRaw = cellStr(r.c[5]).trim().toUpperCase();
     const mql = mqlRaw === 'YES' ? 'yes' : mqlRaw === 'NO' ? 'no' : 'blank';
+    // Lead Score (columna G) -- "Quality"/"High Quality"/similar = qualified; vacío o "Low Quality" no cuenta
+    const leadScoreRaw = cellStr(r.c[6]).trim().toUpperCase();
+    const qualified = leadScoreRaw !== '' && !leadScoreRaw.includes('LOW');
     const ads = adCandidates.length ? adCandidates : ['(unattributed)'];
     return ads.map((rawAd, i) => ({
       date, account, campaign,
       adset: decodePlusEncoded(adsetCandidates[i] || adsetCandidates[0] || ''),
       ad: resolveAdName(rawAd, date, adsByDate),
-      mql
+      mql, qualified
     }));
   });
 
@@ -690,8 +709,9 @@ function mergeSources(metaRows, phRows, icRows) {
   const icMap = new Map();
   icRows.forEach(r => {
     const key = r.date + '' + r.ad;
-    const prev = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, account: r.account, campaign: r.campaign, adset: r.adset, date: r.date, ad: r.ad };
+    const prev = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, account: r.account, campaign: r.campaign, adset: r.adset, date: r.date, ad: r.ad };
     if (r.mql === 'yes') prev.mqlYes++; else if (r.mql === 'no') prev.mqlNo++; else prev.mqlBlank++;
+    if (r.qualified) prev.mqlQualified++;
     icMap.set(key, prev);
   });
 
@@ -702,10 +722,10 @@ function mergeSources(metaRows, phRows, icRows) {
     const key = r.date + '' + r.ad;
     seen.add(key);
     const ph = phMap.get(key) || { sessions: 0, bounced: 0 };
-    const ic = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0 };
+    const ic = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0 };
     rows.push(Object.assign({}, r, {
       sessions: ph.sessions, bounced: ph.bounced,
-      mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank
+      mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified
     }));
   });
 
@@ -718,7 +738,7 @@ function mergeSources(metaRows, phRows, icRows) {
     rows.push({
       date: ic.date, account: ic.account, campaign: ic.campaign, adset: ic.adset, ad: ic.ad,
       spend: 0, impressions: 0, clicks: 0, reach: 0, frequency: 0, lpViews: 0, registrations: 0, schedulesMeta: 0, videoViews: 0,
-      sessions: 0, bounced: 0, mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank
+      sessions: 0, bounced: 0, mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified
     });
   });
   if (unmatched > 0) console.warn('iClosed: ' + unmatched + ' rows (Date+Ad) with no match in Meta_Raw -- check ad names.');
@@ -873,7 +893,7 @@ function safeDiv(a, b) { return b > 0 ? a / b : 0; }
 // ===================== AGGREGATION =====================
 
 function sumRows(rows) {
-  const s = { spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, registrations: 0, schedulesMeta: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, videoViews: 0, sessions: 0, bounced: 0 };
+  const s = { spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, registrations: 0, schedulesMeta: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, videoViews: 0, sessions: 0, bounced: 0 };
   rows.forEach(r => { Object.keys(s).forEach(k => s[k] += (r[k] || 0)); });
   return s;
 }
@@ -907,13 +927,16 @@ function renderBigNumbers(rows) {
   document.getElementById('bn-clicks').textContent = fmtInt(s.clicks);
   document.getElementById('bn-cpm').textContent = fmtMoney(safeDiv(s.spend, s.impressions) * 1000);
   document.getElementById('bn-ctr').textContent = fmtPct(safeDiv(s.clicks, s.impressions));
+  document.getElementById('bn-cp1kreach').textContent = fmtMoney(safeDiv(s.spend, s.reach) * 1000);
   document.getElementById('bn-frequency').textContent = fmtDec(safeDiv(s.impressions, s.reach));
   document.getElementById('bn-real-mql').textContent = fmtInt(s.mqlYes);
   document.getElementById('bn-spam').textContent = fmtInt(s.mqlNo);
   document.getElementById('bn-cpsch').textContent = fmtMoney(safeDiv(s.spend, s.mqlYes));
+  document.getElementById('bn-qualified-mql').textContent = fmtInt(s.mqlQualified);
+  document.getElementById('bn-cpqmql').textContent = fmtMoney(safeDiv(s.spend, s.mqlQualified));
 
   const compareEl = document.getElementById('compare-range-label');
-  const deltaKeys = ['spend', 'clicks', 'cpm', 'ctr', 'frequency', 'real-mql', 'spam', 'cpsch'];
+  const deltaKeys = ['spend', 'clicks', 'cpm', 'ctr', 'cp1kreach', 'frequency', 'real-mql', 'spam', 'cpsch', 'qualified-mql', 'cpqmql'];
 
   if (!filterState.compare || !filterState.dateFrom || !filterState.dateTo) {
     deltaKeys.forEach(k => {
@@ -946,19 +969,26 @@ function renderBigNumbers(rows) {
   const prevCpm = safeDiv(p.spend, p.impressions) * 1000;
   const curCtr = safeDiv(s.clicks, s.impressions);
   const prevCtr = safeDiv(p.clicks, p.impressions);
+  const curCp1kReach = safeDiv(s.spend, s.reach) * 1000;
+  const prevCp1kReach = safeDiv(p.spend, p.reach) * 1000;
   const curFreq = safeDiv(s.impressions, s.reach);
   const prevFreq = safeDiv(p.impressions, p.reach);
   const curCpsch = safeDiv(s.spend, s.mqlYes);
   const prevCpsch = safeDiv(p.spend, p.mqlYes);
+  const curCpqmql = safeDiv(s.spend, s.mqlQualified);
+  const prevCpqmql = safeDiv(p.spend, p.mqlQualified);
 
   setDelta('spend', s.spend, p.spend, 'neutral');
   setDelta('clicks', s.clicks, p.clicks, 'up-good');
   setDelta('cpm', curCpm, prevCpm, 'up-bad');
   setDelta('ctr', curCtr, prevCtr, 'up-good');
+  setDelta('cp1kreach', curCp1kReach, prevCp1kReach, 'up-bad');
   setDelta('frequency', curFreq, prevFreq, 'up-good');
   setDelta('real-mql', s.mqlYes, p.mqlYes, 'up-good');
   setDelta('spam', s.mqlNo, p.mqlNo, 'up-bad');
   setDelta('cpsch', curCpsch, prevCpsch, 'up-bad');
+  setDelta('qualified-mql', s.mqlQualified, p.mqlQualified, 'up-good');
+  setDelta('cpqmql', curCpqmql, prevCpqmql, 'up-bad');
 
   if (compareEl) compareEl.textContent = 'Comparing to ' + prevFrom + ' – ' + prevTo;
 }

@@ -1,6 +1,6 @@
 # HANDOFF — SSW Account Dashboard (Meta Ads)
 
-Last updated: 2026-08-05. Written for a fresh Claude session to pick this up with zero prior context.
+Last updated: 2026-08-06. Written for a fresh Claude session to pick this up with zero prior context.
 
 ## 1. Objetivo
 
@@ -40,29 +40,49 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
 **Terminado y funcionando (probado en vivo con datos reales):**
 - Las 5 secciones originales: Big Numbers, Spend and Cost per Real MQL (chart), Creative
   Performance (tabla), Creative Table — Choose your Metrics (scatter), Funnel view.
-- Filtros: rango de fechas (default: últimos 14 días con data), Account/Campaign/Ad Set
+- Filtros: barra de filtros **sticky** (`position: sticky; top: 0` en `#filters-card`,
+  queda fija arriba al scrollear). Rango de fechas por **presets** (`#f-date-preset`):
+  Last 7 days / Last 30 days / This Month / Last Month / Year to date / Custom (los
+  date pickers "From"/"To" solo se muestran con Custom). Account/Campaign/Ad Set
   (multi-select con checkboxes, cascada entre sí).
 - Comparación de períodos: checkbox "Compare" + modo "Previous period" o "Custom range"
   (con 2 date pickers propios). Deltas por tile con color según si subir es bueno o malo.
+- **Dark mode manual**: checkbox "Dark mode" en los filtros pisa `prefers-color-scheme`
+  vía atributo `data-theme` en `<html>` (`:root[data-theme="dark"]`/`="light"` con mayor
+  especificidad que la media query), persistido en `localStorage` (`ssw-dashboard-theme`).
+- **Password gate**: pantalla de bloqueo antes de mostrar el dashboard (contraseña
+  `AccountSSW2026`, hardcodeada en el JS). Desbloqueo persistido en `sessionStorage`
+  (`ssw-dashboard-unlocked`) — se vuelve a pedir si se cierra el navegador/tab. Es
+  protección liviana del lado del cliente, **no seguridad real** (la password queda
+  visible en "view source", y la Google Sheet detrás sigue siendo pública vía link) —
+  el usuario lo sabe, lo pidió igual como filtro contra "alguien abre el link al azar".
+- Big Numbers: 11 tiles en grid de 4 columnas — Spend, Clicks, CPM, CTR, Cost per 1K
+  Reached, Frequency (estimated), Real MQLs (iClosed), Spam (iClosed), Cost per Real MQL,
+  Qualified MQLs (iClosed), Cost per Qualified MQL. "Cost per 1K Reached" es el mismo
+  cálculo que Meta llama "Cost per 1,000 Accounts Center Accounts Reached" (renombre de
+  "cost per 1000 people reached", no es una métrica nueva) — `spend / reach * 1000`,
+  ya calculable con los datos que trae Meta_Raw, **no requirió tocar Code.gs**.
 - Spend chart: título con 2 `<select>` inline (look de heading, no de form control) para
   elegir qué métrica va en barra (izq) y cuál en línea (der), 9 métricas disponibles.
   Daily/Weekly toggle. Línea siempre visualmente por encima de las barras.
 - Tabla Creative Performance: columnas "Creative" (thumbnail) y "Ad" fijas al scrollear
   horizontalmente. `table-layout: fixed` con anchos explícitos (evita que nombres largos
-  rompan el layout).
-- Scatter: ejes X/Y elegibles (7 métricas) + botón "Filter" (panel con Spend/Impressions/
-  Clicks, mayor/menor que + valor).
+  rompan el layout). Fila se resalta (`tr.row-highlighted`) cuando se llega desde un
+  click en el scatter (ver abajo).
+- Scatter ("Choose your Metrics"): ejes X/Y elegibles (10 métricas, incluye Real MQL/
+  Spam/Cost per Real MQL) + botón "Filter" (panel con Spend/Impressions/Clicks, mayor/
+  menor que + valor). **Click en un punto** resalta esa fila en Creative Performance y
+  hace scroll hasta ahí (compensando la altura de la barra de filtros sticky).
 - Funnel: Impressions → Clicks → LP Views → Registrations (all MQLs, de iClosed) → Real MQL.
 - Branding: logo SSW arriba, paleta violeta/verde, texto principal en amarillo Pantone
   `#E6C301` (dark mode).
 - Apps Script: sync diario de Meta (10 días rolling) y PostHog (10 días rolling) vía
   triggers ya activos. Backfill histórico ya corrido (year-to-date, ~9,468 filas).
 - Deploy: repo + Vercel funcionando, confirmado en vivo.
+- **Light mode**: verificado visualmente varias veces esta sesión (filtros, tabla,
+  highlight, Big Numbers) — se ve bien, ya no es un pendiente.
 
 **A medias / no verificado:**
-- **Light mode**: el CSS lo define (variables `:root` sin el media query dark), pero
-  **nunca se probó visualmente** esta sesión — todo el testing fue forzando dark mode.
-  Si alguien lo abre en modo claro, revisar que se vea bien.
 - `doGet()` en `Code.gs`: quedó de un intento anterior de hostear como Web App de Apps
   Script, **abandonado en favor de Vercel**. No rompe nada dejarlo, pero es código muerto.
 
@@ -123,11 +143,22 @@ gviz, que viene vacía) — el parser lee por **posición fija de columna**, no 
 **`PostHog_Raw`** (4 columnas): `Date, Ad, Sessions, Bounced Sessions` — llenada por `syncPostHog()`.
 ("Sessions" en realidad son "Visitors" de PostHog — funciona igual para el cálculo, ver comentario en el código.)
 
-**`iClosed_Raw`** (6 columnas): `Date, Account, Campaign, Ad Set, Ad, Real MQL` — **manual,
-el usuario pega el export de iClosed acá**. `Real MQL` es texto `YES` / `NO` / vacío (vacío =
-contactos de antes del 14/6/2026 cuando no existía el campo, o algún hueco posterior).
-`Account` casi siempre viene vacío (iClosed no lo trae) — el dashboard lo completa
+**`iClosed_Raw`** (7 columnas, desde 2026-08-06): `Date, Account, Campaign, Ad Set, Ad,
+Real MQL, Lead Score` — **manual, el usuario pega el export de iClosed acá**. `Real MQL`
+es texto `YES` / `NO` / vacío (vacío = contactos de antes del 14/6/2026 cuando no existía
+el campo, o algún hueco posterior). `Lead Score` (columna G, agregada 2026-08-06) es texto
+libre -- "Qualified" = cualquier valor no vacío que no contenga "LOW" (cubre "Quality",
+"High Quality", etc.); vacío o "Low Quality" no cuenta. Da la métrica "Qualified MQL",
+**independiente de Real MQL** (no es un subconjunto de Real MQL=Yes) -- por eso en data
+vieja hay filas con Lead Score de calidad y Real MQL vacío (la columna Real MQL no existía
+antes del 14/6/2026), lo cual está documentado en un caveat visible en el dashboard, no es
+un bug. `Account` casi siempre viene vacío (iClosed no lo trae) — el dashboard lo completa
 automáticamente cruzando `Campaign` contra `Meta_Raw` cuando puede.
+
+**IMPORTANTE — posición fija de columnas**: el parser de `iClosed_Raw` lee por índice
+(`r.c[6]` para Lead Score), no por nombre de header. Si en algún momento se agrega otra
+columna a este tab, tiene que ir **al final** (columna H en adelante) — insertarla en
+el medio corre todo lo que viene después y rompe el join.
 
 **Meta Ads — 3 cuentas:**
 | Nombre | Account ID |
@@ -195,10 +226,13 @@ usuario vuelve con más pedidos, el flujo es:
    pegando parches parciales), y después traer la copia actualizada a este repo también.
 
 Pendiente opcional (no pedido, solo sugerido si surge la oportunidad):
-- Verificar visualmente el dashboard en light mode.
 - Limpiar `doGet()` de Code.gs si se vuelve a tocar ese archivo.
 - Si el volumen de datos sigue creciendo mucho (Meta_Raw ya tiene ~9,500 filas), vigilar
   que Google Sheets no se ponga lento — no es un problema todavía.
+- Qualified MQL / Cost per Qualified MQL hoy solo están en Big Numbers -- si el usuario
+  los quiere también en la tabla Creative Performance o como métrica del scatter, es
+  agregar `mqlQualified`/`cpqmql` a `aggregateByAd()`, la tabla, y `METRIC_OPTIONS`
+  (mismo patrón que `mqlYes`/`mqlNo`/`cpsch`).
 
 ## 8. Convenciones de código
 
