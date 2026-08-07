@@ -210,12 +210,20 @@ la automatización en curso -- ver §7).
   `https://api-docs-iclosed.redocly.app/_bundle/openapi/v1/openapi.json`, es un Redoc SPA,
   para leerla de una hay que bajar el JSON directo, no funciona hacer WebFetch a la URL
   del Redoc porque el contenido se renderiza client-side).
-- Endpoint clave: `GET /v1/eventCalls` (no `/v1/contacts`, ese no trae UTM ni custom
-  fields). Filtros útiles: `eventType=PAST`, `dateFrom`/`dateTo`, `limit`/`page`
-  (paginado, máx 100/page), `orderColumn=dateTime&orderBy=desc`. Cada call trae `utm`
-  (array de `{utmKey, utmValue}`), `task[].outcome` (WON/NO_SALE/QUALIFIED/UNQUALIFIED/
-  PENDING/APPROVED/REJECTED/PENDING_OUTCOME), y `secondaryAnswers`/`questions` (custom
-  fields, ahí debería estar "Lead Score" -- confirmar nombre exacto con data real).
+- Endpoint para attribution: `GET /v1/eventCalls` (no `/v1/contacts`, ese no trae UTM).
+  Filtros útiles: `eventType=PAST`, `dateFrom`/`dateTo` (filtran por `dateTime`, no por
+  creación), `limit`/`page` (paginado, máx 100/page), `orderColumn`/`orderBy`. Cada call
+  trae `contactId`, `dateTime`/`dateTimeUTC`, y `utm` (array `{utmKey,utmValue}` -- filtrar
+  por `utm_source`/`utm_medium`/`utm_campaign`/`utm_content`, el resto es ruido de tracking
+  de Meta/browser). `task[].outcome` también está acá (WON/NO_SALE/QUALIFIED/UNQUALIFIED/
+  PENDING/APPROVED/REJECTED/PENDING_OUTCOME) pero **no se termina usando** -- Real MQL es un
+  custom field separado, no se deriva de `outcome`.
+- Endpoint para Real MQL / Lead Score: `GET /v1/contacts/detail?contactId=X` (un contacto
+  a la vez, sin endpoint bulk) → `data.CustomFieldAssociation[]`, filtrar por
+  `customField.identifier === 'real-mql'` / `'lead-score'` y leer `CustomFieldAnswer[0].answer`.
+  Son campos a nivel **CONTACTO** (`customField.type: "CONTACT"`), no de la llamada -- por
+  eso no aparecen en `/v1/eventCalls`. Detalle completo del mapeo y la implementación real
+  en `syncIClosed()`/`fetchIClosedContactFields()`/`buildIClosedRow()` en `Code.gs` (§7).
 
 ## 6. Problemas conocidos / bugs abiertos
 
@@ -259,25 +267,48 @@ la automatización en curso -- ver §7).
 
 ## 7. Próximos pasos
 
-**En curso: automatizar `iClosed_Raw` (hoy es 100% manual, el usuario pega el export).**
-iClosed tiene API REST real + webhooks (no hay que adivinar nada, está confirmado contra
-su OpenAPI spec pública en `developer.iclosed.io`):
-- Base URL: `https://public.api.iclosed.io`. Auth: header `Authorization: Bearer <API key>`
-  (la key ya incluye su propio prefijo `iclosed_...`).
-- El endpoint correcto es **`GET /v1/eventCalls`** (no `/v1/contacts`) — es el único que trae
-  UTM (Campaign/Ad Set/Ad vía `utm` array de `{utmKey, utmValue}`), el outcome de la llamada
-  (`task[].outcome`, valores tipo WON/NO_SALE/QUALIFIED/UNQUALIFIED/PENDING/...), y las
-  respuestas a custom fields (`secondaryAnswers`/`questions`) todo junto por call. `Lead Score`
-  case casi seguro un custom field ahí adentro, hay que confirmar el nombre exacto con data real.
-- Estado: el usuario ya generó su `ICLOSED_API_KEY` y la guardó en Script Properties de Apps
-  Script (mismo lugar que `META_TOKEN`/`POSTHOG_API_KEY`). Se agregó `debugIClosed()` a
-  `Code.gs` (loguea 5 event calls de los últimos 14 días, JSON crudo) para que el usuario la
-  corra y pegue el output real -- **falta que la corra y comparta el log** para poder mapear
-  los campos exactos (qué UTM keys aparecen, cómo se llama el custom field de Lead Score, y
-  qué valores de `outcome` corresponden a Real MQL Yes/No) y recién ahí escribir `syncIClosed()`
-  siguiendo el mismo patrón que `syncMeta()`/`syncPostHog()` (trigger diario + upsert).
-- Si se retoma en una sesión nueva: no repetir la investigación de la API, ya está resuelta acá
-  arriba — ir directo a correr/leer `debugIClosed()` y diseñar el mapeo.
+**Automatización de `iClosed_Raw`: código escrito, FALTA VERIFICAR EN VIVO.** `syncIClosed()`
+ya está en `Code.gs` (commit `d46a8c1`), pero el usuario todavía no lo corrió -- no dar por
+sentado que funciona hasta que confirme una corrida real y revise las filas en la Sheet.
+
+Diseño confirmado con data real (no es especulación, se probó contra la cuenta del usuario):
+- `GET /v1/eventCalls?eventType=PAST&dateFrom=X&dateTo=Y&limit=100&page=N` (paginado) da,
+  por call: `dateTime`/`dateTimeUTC`, `contactId`, y `utm` (array `{utmKey,utmValue}`) con
+  `utm_source`/`utm_medium`/`utm_campaign`/`utm_content` mezclados con ruido (`_fbp`, `_fbc`,
+  `fbclid`, etc. -- se ignoran, solo importan esos 4). `utm_medium` = Ad Set, `utm_campaign` =
+  Campaign, `utm_content` = Ad -- confirmado que matchea 1:1 el tracking template de Meta, y
+  `utm_content` ya viene con espacios como "+" igual que el export manual (el
+  `decodePlusEncoded`/`resolveAdName` del HTML lo resuelve sin cambios).
+- **Real MQL y Lead Score NO están en eventCalls** (ahí solo hay preguntas de intake tipo
+  modelo de negocio/revenue). Son custom fields a nivel **CONTACTO**, no de la llamada:
+  `GET /v1/contacts/detail?contactId=X` → `data.CustomFieldAssociation[]`, cada entrada
+  `{customField: {name, identifier}, CustomFieldAnswer: [{answer}]}`. `identifier: 'real-mql'`
+  → answer tipo `"YES"`/`"NO"`. `identifier: 'lead-score'` → answer tipo `"A: High Quality"`
+  (con prefijo "A: " -- el check `.includes('LOW')` del HTML lo sigue clasificando bien igual,
+  no rompe nada). No hay endpoint bulk para esto, `syncIClosed()` pide un contacto a la vez
+  por cada `contactId` único en la ventana (manejable para `WINDOW_DAYS`, no para backfill
+  masivo sin agregar sleep/chunking si algún día se necesita).
+- `syncIClosed()` sigue el mismo patrón rolling-window + `upsertRows` que `syncMeta`/
+  `syncPostHog`, agregado a `runDailySync()` y a `createTriggers()` (trigger nuevo a las 5am).
+
+**Pasos pendientes para el usuario (en orden, no saltear):**
+1. Pegar el `Code.gs` completo actualizado en Apps Script (Cmd+A, borrar, pegar, Cmd+S).
+2. Correr `syncIClosed` manualmente desde el dropdown (NO activar el trigger todavía) y
+   revisar el log de filas escritas.
+3. Abrir la tab `iClosed_Raw` en la Sheet y mirar a ojo las filas nuevas de los últimos días
+   -- ¿Campaign/Ad Set/Ad tienen pinta correcta? ¿Real MQL/Lead Score tienen los valores
+   esperados comparado con lo que el usuario ve en la UI de iClosed para esos mismos leads?
+4. Recién si eso se ve bien: correr `createTriggers()` una vez para activar el trigger diario
+   de las 5am (esto borra y recrea los 3 triggers -- syncMeta/syncPostHog siguen intactos,
+   solo se agrega el de iClosed).
+5. **Importante**: una vez activo el trigger, `upsertRows` va a REEMPLAZAR cualquier fila de
+   los últimos `WINDOW_DAYS` (10 días) en cada corrida -- si el usuario sigue pegando el
+   export manual a mano en ese rango, la próxima corrida automática lo va a pisar. Avisarle
+   esto explícitamente antes de que se confunda por qué "desaparecieron" ediciones manuales
+   recientes. Data de antes de esa ventana (pegada a mano, histórica) no se toca.
+- Si se retoma en sesión nueva y el usuario dice que ya lo probó: preguntar primero cómo salió
+  antes de asumir que está en producción -- este ítem se marcó "en curso" varias veces en esta
+  misma sesión y recién quedó realmente escrito al final.
 
 Fuera de eso, no hay más pedidos pendientes del usuario a esta fecha — todo lo demás
 solicitado está implementado, commiteado, y pusheado (repo `ssw-dashboard` está "up to date
