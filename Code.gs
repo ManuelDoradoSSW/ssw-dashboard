@@ -366,6 +366,33 @@ function debugIClosed() {
   Logger.log(resp.getContentText());
 }
 
+// Prueba manual #3: para un contacto que en el export manual aparece con MÚLTIPLES ads
+// (UTM Content con coma), ver si "referrerUrl" de /v1/contacts/detail corresponde al primer
+// touch o al último -- necesario para decidir qué se pierde si el sync usa solo referrerUrl
+// en vez del multi-touch completo que trae el export manual. Uso "search" de /v1/contacts
+// para encontrar el contactId a partir del email (no lo tenemos a mano de otra forma).
+function debugIClosedFindByEmail(email) {
+  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
+  if (!apiKey) throw new Error('Falta ICLOSED_API_KEY en Script Properties');
+
+  var searchUrl = ICLOSED_BASE_URL + '/v1/contacts?search=' + encodeURIComponent(email) + '&limit=5';
+  var searchResp = UrlFetchApp.fetch(searchUrl, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
+  Logger.log('SEARCH STATUS ' + searchResp.getResponseCode());
+  Logger.log(searchResp.getContentText());
+
+  var searchJson = JSON.parse(searchResp.getContentText());
+  var contacts = (searchJson.data && searchJson.data.contacts) || [];
+  if (!contacts.length) { Logger.log('No se encontró ningún contacto con ese email.'); return; }
+
+  var contactId = contacts[0].id;
+  Logger.log('contactId encontrado: ' + contactId);
+
+  var detailUrl = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId;
+  var detailResp = UrlFetchApp.fetch(detailUrl, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
+  Logger.log('DETAIL STATUS ' + detailResp.getResponseCode());
+  Logger.log(detailResp.getContentText());
+}
+
 // Prueba manual #2: debugIClosed() no trajo "Lead Score" en ningún lado (solo preguntas de
 // intake tipo modelo de negocio/revenue/ad spend). La spec de /v1/contacts/detail sí expone
 // "CustomFieldAssociation" -- ahí es donde debería vivir Lead Score (y potencialmente Real
