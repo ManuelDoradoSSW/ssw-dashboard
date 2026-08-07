@@ -248,6 +248,34 @@ function findAction(actions, preferredTypes) {
   return 0;
 }
 
+// ===================== ICLOSED =====================
+// Base URL y auth confirmados contra la spec pública de la API (developer.iclosed.io):
+// Authorization: Bearer <API key completa, ya incluye su propio prefijo>.
+var ICLOSED_BASE_URL = 'https://public.api.iclosed.io';
+
+// Prueba manual: trae las últimas llamadas (event calls) de los últimos 14 días y loguea
+// el JSON crudo tal cual lo devuelve la API. Correrla UNA vez para ver los nombres reales
+// de UTM keys, el valor de "outcome", y cómo aparece el custom field "Lead Score" en
+// secondaryAnswers/questions -- recién con eso se puede escribir el sync real sin adivinar
+// la forma exacta de la respuesta.
+function debugIClosed() {
+  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
+  if (!apiKey) throw new Error('Falta ICLOSED_API_KEY en Script Properties');
+
+  var url = ICLOSED_BASE_URL + '/v1/eventCalls'
+    + '?eventType=PAST'
+    + '&dateFrom=' + daysAgo(14)
+    + '&dateTo=' + daysAgo(0)
+    + '&limit=5&page=0&orderColumn=dateTime&orderBy=desc';
+
+  var resp = UrlFetchApp.fetch(url, {
+    headers: { Authorization: 'Bearer ' + apiKey },
+    muteHttpExceptions: true
+  });
+  Logger.log('STATUS ' + resp.getResponseCode());
+  Logger.log(resp.getContentText());
+}
+
 // ===================== POSTHOG =====================
 
 function debugWebStats() {
