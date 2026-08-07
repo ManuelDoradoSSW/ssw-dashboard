@@ -429,7 +429,10 @@
   </div>
 
   <div class="card">
-    <h2>Creative Performance</h2>
+    <div class="chart-title-row" style="margin-bottom:16px;">
+      <h2 style="margin:0;">Creative Performance</h2>
+      <span class="caveat" style="margin:0;" id="posthog-start-caveat"></span>
+    </div>
     <div class="table-scroll">
       <table id="creative-table">
         <thead>
@@ -555,6 +558,7 @@ const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'reach', 'frequency', 'bounceR
 
 let UNIFIED = []; // flat rows at Date x Account x Campaign x AdSet x Ad grain
 let charts = {};
+let postHogStartDate = null; // primera fecha con sesiones de PostHog reales (ver caveat en Creative Performance)
 
 // ===================== THEME =====================
 // Checkbox "Dark mode" en los filtros pisa la preferencia del sistema (prefers-color-scheme)
@@ -643,6 +647,8 @@ async function loadAll() {
   const phRows = dataRows(phTable).map(r => ({
     date: cellDate(r.c[0]), ad: cellStr(r.c[1]), sessions: cellNum(r.c[2]), bounced: cellNum(r.c[3])
   }));
+  const phDatesWithSessions = phRows.filter(r => r.sessions > 0).map(r => r.date);
+  postHogStartDate = phDatesWithSessions.length ? phDatesWithSessions.sort()[0] : null;
 
   const adsByDate = buildAdCrosscheck(metaRows);
   // iClosed nunca trae Account -- lo completo cruzando el Campaign contra Meta_Raw
@@ -907,6 +913,9 @@ function fmtInt(v) { return Math.round(v || 0).toLocaleString('en-US'); }
 function fmtDec(v) { return (v || 0).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
 function fmtPct(v) { return ((v || 0) * 100).toLocaleString('en-US', { maximumFractionDigits: 1 }) + '%'; }
 function fmtByType(v, fmt) { return fmt === 'money' ? fmtMoney(v) : fmt === 'pct' ? fmtPct(v) : fmt === 'int' ? fmtInt(v) : fmtDec(v); }
+function fmtDateLong(dateStr) {
+  return new Date(dateStr + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
 
 function safeDiv(a, b) { return b > 0 ? a / b : 0; }
 
@@ -1454,6 +1463,9 @@ async function init() {
     refreshFilterOptions();
     populateScatterSelects();
     populateSpendMetricSelects();
+    document.getElementById('posthog-start-caveat').textContent = postHogStartDate
+      ? 'Bounce Rate (PostHog) available from ' + fmtDateLong(postHogStartDate)
+      : '';
     document.getElementById('app-status').style.display = 'none';
     document.getElementById('app-body').style.display = 'block';
     renderAll();
