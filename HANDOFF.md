@@ -1,6 +1,6 @@
 # HANDOFF — SSW Account Dashboard (Meta Ads)
 
-Last updated: 2026-08-06. Written for a fresh Claude session to pick this up with zero prior context.
+Last updated: 2026-08-07. Written for a fresh Claude session to pick this up with zero prior context.
 
 ## 1. Objetivo
 
@@ -56,35 +56,51 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
   protección liviana del lado del cliente, **no seguridad real** (la password queda
   visible en "view source", y la Google Sheet detrás sigue siendo pública vía link) —
   el usuario lo sabe, lo pidió igual como filtro contra "alguien abre el link al azar".
-- Big Numbers: 11 tiles en grid de 4 columnas — Spend, Clicks, CPM, CTR, Cost per 1K
-  Reached, Frequency (estimated), Real MQLs (iClosed), Spam (iClosed), Cost per Real MQL,
-  Qualified MQLs (iClosed), Cost per Qualified MQL. "Cost per 1K Reached" es el mismo
-  cálculo que Meta llama "Cost per 1,000 Accounts Center Accounts Reached" (renombre de
-  "cost per 1000 people reached", no es una métrica nueva) — `spend / reach * 1000`,
-  ya calculable con los datos que trae Meta_Raw, **no requirió tocar Code.gs**.
-- Spend chart: título con 2 `<select>` inline (look de heading, no de form control) para
-  elegir qué métrica va en barra (izq) y cuál en línea (der), 9 métricas disponibles.
-  Daily/Weekly toggle. Línea siempre visualmente por encima de las barras.
+- Big Numbers: 10 tiles en 2 grupos con sub-header (`.bignum-group`), grid
+  `auto-fit minmax(150px,1fr)`. **Media** (5): Spend, Clicks, CPM, CTR, Cost per 1000 Meta
+  Accounts. **Lead Quality (iClosed)** (5): Real MQLs, Spam, Cost per Real MQL, Qualified
+  MQLs, Cost per Qualified MQL. Solo el valor numérico de cada tile usa el color de acento
+  (`var(--accent)`, dorado) -- labels/headers/botones usan `--text-primary` (neutro), a
+  propósito, para que no todo grite al mismo volumen (pedido de rediseño 2026-08-07).
+  "Cost per 1000 Meta Accounts" es el mismo cálculo que Meta llama oficialmente "Cost per
+  1,000 Accounts Center Accounts Reached" (renombre de "cost per 1000 people reached", no
+  es una métrica nueva) — `spend / reach * 1000`, ya calculable con Meta_Raw, no requirió
+  tocar Code.gs. **Frequency se sacó de acá** (ver §6, sesgado a la baja en cualquier
+  rango >1 día) pero sigue en el chart/tabla/scatter.
+- Spend chart: **es un solo chart combinado bar+line con doble eje** (`chart-spend`,
+  `yAxisID: 'y'/'y1'`, `lineOnTopPlugin` para que la línea quede siempre visualmente
+  arriba de las barras) -- se intentó partir en dos charts de un solo eje (mejor práctica
+  de dataviz, ver `references/anti-patterns.md` de la skill `dataviz`) pero el usuario lo
+  pidió de vuelta combinado explícitamente: quiere comparar 2 variables superpuestas para
+  ver tendencias de un vistazo, prioriza eso por sobre la corrección de doble-eje. **No
+  volver a proponer separarlo.** Sí se le bajó la opacidad al color de las barras (violeta
+  con alpha, `s1 + '99'`) para que la línea se lea mejor por encima. Título con 2 `<select>`
+  inline para elegir métrica de barra/línea, 11 métricas disponibles (incluye Qualified
+  MQL/Cost per Qualified MQL). Daily/Weekly toggle.
 - Tabla Creative Performance: columnas "Creative" (thumbnail) y "Ad" fijas al scrollear
   horizontalmente. `table-layout: fixed` con anchos explícitos (evita que nombres largos
   rompan el layout). Fila se resalta (`tr.row-highlighted`) cuando se llega desde un
-  click en el scatter (ver abajo).
-- Scatter ("Choose your Metrics"): ejes X/Y elegibles (10 métricas, incluye Real MQL/
-  Spam/Cost per Real MQL) + botón "Filter" (panel con Spend/Impressions/Clicks, mayor/
-  menor que + valor). **Click en un punto** resalta esa fila en Creative Performance y
-  hace scroll hasta ahí (compensando la altura de la barra de filtros sticky).
+  click en el scatter (ver abajo). Caveat chico (no bold) al lado del título con la fecha
+  real desde la que hay data de PostHog para Bounce Rate, calculada dinámicamente.
+- Scatter ("Choose your Metrics"): ejes X/Y elegibles (11 métricas, incluye Real MQL/
+  Spam/Cost per Real MQL/Qualified MQL/Cost per Qualified MQL) + botón "Filter" (panel
+  con Spend/Impressions/Clicks, mayor/menor que + valor). **Click en un punto** resalta
+  esa fila en Creative Performance y hace scroll hasta ahí (compensando la altura de la
+  barra de filtros sticky).
 - Funnel: Impressions → Clicks → LP Views → Registrations (all MQLs, de iClosed) → Real MQL.
-- Branding: logo SSW arriba, paleta violeta/verde, texto principal en amarillo Pantone
-  `#E6C301` (dark mode).
+- **Qualified MQL**: `iClosed_Raw` pasó a 7 columnas (se agregó `Lead Score` como columna G,
+  2026-08-06) — "Quality"/"High Quality"/similar = qualified, vacío o "Low Quality" no
+  cuenta (ver §5 para el detalle exacto de la regla). Métrica independiente de Real MQL,
+  no un subconjunto.
+- Branding: logo SSW arriba, paleta violeta/verde. El dorado (`--accent`, `#E6C301` dark /
+  `#8a6a00` light) está **reservado** para el h1 y los valores de Big Numbers/chart-select
+  -- no es el color de texto por default (eso cambió en el rediseño del 2026-08-07, antes
+  todo el texto en dark mode era dorado).
 - Apps Script: sync diario de Meta (10 días rolling) y PostHog (10 días rolling) vía
-  triggers ya activos. Backfill histórico ya corrido (year-to-date, ~9,468 filas).
+  triggers ya activos. Backfill histórico de Meta y de **PostHog** ya corridos (ver §6).
+  `doGet()` (Web App vestigial) se eliminó de `Code.gs` el 2026-08-07 -- ya no existe.
 - Deploy: repo + Vercel funcionando, confirmado en vivo.
-- **Light mode**: verificado visualmente varias veces esta sesión (filtros, tabla,
-  highlight, Big Numbers) — se ve bien, ya no es un pendiente.
-
-**A medias / no verificado:**
-- `doGet()` en `Code.gs`: quedó de un intento anterior de hostear como Web App de Apps
-  Script, **abandonado en favor de Vercel**. No rompe nada dejarlo, pero es código muerto.
+- **Light mode**: verificado visualmente varias veces — se ve bien, no es un pendiente.
 
 **No implementado (fuera de alcance, por decisión):**
 - Meta Schedules como métrica separada — se intentó pero Meta no expone Schedule vs
@@ -92,7 +108,8 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
   configuradas en Ads Manager (ver sección 6). Se descartó explícitamente por pedido
   del usuario; el dashboard usa solo Real MQL de iClosed.
 - Hold Rate — no hay datos de video retention disponibles en la fuente actual.
-- Automatización de iClosed — sigue siendo 100% manual (el usuario pega el export).
+- Automatización de iClosed — **en curso**, ver §7 (no es ya un "fuera de alcance", es un
+  trabajo activo a mitad de camino).
 
 ## 4. Decisiones tomadas (no volver a discutir)
 
@@ -111,11 +128,15 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
   (el mismo query kind que usa la UI de PostHog por dentro), NO reinventando la fórmula
   a mano (un intento anterior con HogQL manual daba resultados incorrectos).
 - **Paleta**: violeta (`#4a3aa7` light / `#9085e9` dark) reemplaza al azul, verde (`#008300`)
-  reemplaza al naranja/rojo — pedido explícito de branding SSW. Texto principal en dark
-  mode: amarillo Pantone `#E6C301` (también pedido de branding). Metodología de paleta
-  categórica/secuencial sigue la skill `dataviz` del proyecto, con estos valores
-  sobrescritos a mano para SSW (no se re-corrió el validador tras el cambio de marca,
-  es un pedido estético puntual, no un rediseño completo).
+  reemplaza al naranja/rojo — pedido explícito de branding SSW. Amarillo Pantone `#E6C301`
+  (también pedido de branding) vive en `--accent`, **reservado** para el h1 y los valores
+  numéricos de Big Numbers/chart-select -- NO es el color de texto por default (eso se
+  corrigió en el rediseño del 2026-08-07: antes `--text-primary` era el amarillo y todo el
+  texto de la UI en dark mode gritaba al mismo volumen; ahora `--text-primary` es un
+  neutro casi-blanco y el amarillo quedó solo para lo que realmente es un dato destacado).
+  Metodología de paleta categórica/secuencial sigue la skill `dataviz` del proyecto, con
+  estos valores sobrescritos a mano para SSW (no se re-corrió el validador tras el cambio
+  de marca, es un pedido estético puntual, no un rediseño completo del sistema de color).
 - **Ventana de sync diario = 10 días** (no todo el historial) para no gastar cuota/tiempo
   de la API de Meta todos los días. El historial completo se trae con `backfillMeta`
   (manual, corrido una vez, trae year-to-date).
@@ -177,23 +198,47 @@ Tracking template de Meta (confirmado con el usuario):
 **Apps Script Script Properties** (ya configuradas, no hay que tocarlas salvo rotación):
 `META_TOKEN` (System User token, scope `ads_read`, confirmado **sin expiración**),
 `POSTHOG_API_KEY` (Personal API Key, scope Query), `POSTHOG_PROJECT_ID` = `462623`,
-`POSTHOG_HOST` = `https://us.posthog.com`.
+`POSTHOG_HOST` = `https://us.posthog.com`, `ICLOSED_API_KEY` (agregada 2026-08-07, para
+la automatización en curso -- ver §7).
 
 **Triggers activos en Apps Script**: `syncMeta` diario 3am, `syncPostHog` diario 4am
 (creados con `createTriggers()`, ya corrido).
 
+**iClosed API** (para la automatización en curso, ver §7 para el estado):
+- Base URL: `https://public.api.iclosed.io`. Auth: header `Authorization: Bearer <key>`.
+- Spec pública completa: `https://developer.iclosed.io/` (OpenAPI en
+  `https://api-docs-iclosed.redocly.app/_bundle/openapi/v1/openapi.json`, es un Redoc SPA,
+  para leerla de una hay que bajar el JSON directo, no funciona hacer WebFetch a la URL
+  del Redoc porque el contenido se renderiza client-side).
+- Endpoint clave: `GET /v1/eventCalls` (no `/v1/contacts`, ese no trae UTM ni custom
+  fields). Filtros útiles: `eventType=PAST`, `dateFrom`/`dateTo`, `limit`/`page`
+  (paginado, máx 100/page), `orderColumn=dateTime&orderBy=desc`. Cada call trae `utm`
+  (array de `{utmKey, utmValue}`), `task[].outcome` (WON/NO_SALE/QUALIFIED/UNQUALIFIED/
+  PENDING/APPROVED/REJECTED/PENDING_OUTCOME), y `secondaryAnswers`/`questions` (custom
+  fields, ahí debería estar "Lead Score" -- confirmar nombre exacto con data real).
+
 ## 6. Problemas conocidos / bugs abiertos
 
-- **Cobertura de PostHog muy baja (~17% de los ads)**: solo ~74 de 436 ads en Meta_Raw
-  tienen alguna fila en PostHog_Raw. Causa: `syncPostHog()` solo mantiene una ventana
-  rolling de 10 días (igual que `syncMeta`), pero a diferencia de Meta **nunca se corrió
-  un backfill histórico de PostHog** (no existe un `backfillPostHog()`). Antes esto se
-  manifestaba como Bounce Rate "0%" en ads con mucho spend pero sin sesiones matcheadas
-  (indistinguible de un 0% real porque `safeDiv(bounced, sessions)` da 0 si sessions=0) —
-  ya arreglado en el HTML: la tabla muestra "—" y el scatter excluye esos ads cuando el eje
-  usa Bounce Rate (ver `sessions > 0` checks cerca de `renderCreativeTable`/`renderScatter`).
-  Pendiente real (no resuelto, solo el síntoma): si el usuario quiere Bounce Rate histórico
-  correcto, hay que escribir un `backfillPostHog()` en Code.gs análogo a `backfillMeta()`.
+- **Cobertura de PostHog** (RESUELTO 2026-08-07): antes solo ~17% de los ads tenían alguna
+  fila en PostHog_Raw porque nunca se había corrido un backfill (solo existía la ventana
+  rolling de 10 días de `syncPostHog`). Se agregó `backfillPostHog()` a Code.gs (mismo
+  patrón que `backfillMeta`, troceado por mes) y se corrió: trajo 1,256 filas nuevas
+  jun-ago 2026. Ene-may 2026 siguen en 0 filas porque genuinamente no había tráfico
+  `utm_source=fb_ad` en PostHog en esos meses (no es un bug). El HTML ya distingue esto
+  bien: la tabla muestra "—" (no "0%") cuando `sessions=0`, y hay un caveat chico al lado
+  del título de "Creative Performance" con la fecha real desde la que hay data (calculado
+  dinámicamente del mínimo `date` con `sessions>0`, no hardcodeado).
+- **Frequency es un estimado sesgado a la baja para cualquier rango de más de 1 día**:
+  `Frequency = Impressions/Reach`, pero Reach no es sumable entre días (Meta dedupea
+  personas dentro de un rango, no día a día) — sumar el reach diario infla el denominador,
+  así que Frequency calculado da sistemáticamente más bajo que el real, y cuanto más ancho
+  el rango, peor (por eso da ~1.1-1.2 casi fijo sea 7 días o year-to-date). Es exacto solo
+  a nivel Date×Ad sin ninguna agregación. Se sacó de Big Numbers por esto (pedido explícito
+  del usuario 2026-08-07), pero sigue en el selector de métricas del Spend chart, la tabla
+  de Creative Performance, y los ejes del scatter, con el mismo sesgo ahí también. No hay
+  forma de arreglarlo con los datos ya guardados por día -- la única solución real sería
+  traer Reach sin desglosar por día para rangos específicos (ver intercambio sobre esto,
+  no implementado, el usuario solo pidió sacarlo de Big Numbers).
 - **Meta "Schedules" no se puede aislar por API** sin crear Custom Conversions en Meta
   Ads Manager para "Schedule", "Contact" y "2ndCallBooked" (hoy los 3 vienen mezclados
   bajo `offsite_conversion.fb_pixel_custom`). Si en algún momento se crean esas Custom
@@ -207,9 +252,6 @@ Tracking template de Meta (confirmado con el usuario):
   sin match, solo queda 1 genuina sin resolver (el resto son de fuera de la ventana de
   10 días de Meta_Raw, esperable) — pero si aparecen MUCHAS filas nuevas sin match al
   revisar `console.warn` del navegador, revisar si cambió el formato de export de iClosed.
-- **Light mode sin verificar** (ver §3).
-- **`doGet()` vestigial** en Code.gs, sin usar (ver §3) — se puede borrar cuando se toque
-  el archivo de nuevo, no es urgente.
 - El panel de navegador usado para testing esta sesión (Claude Browser pane) tuvo
   screenshots en negro intermitentes — es un problema de la herramienta, no del código
   (se verificó todo por inspección JS/DOM directa como respaldo). Si se repite en la
@@ -217,9 +259,29 @@ Tracking template de Meta (confirmado con el usuario):
 
 ## 7. Próximos pasos
 
-No hay pedidos pendientes del usuario a esta fecha — todo lo solicitado está implementado,
-commiteado, y pusheado (repo `ssw-dashboard` está "up to date with origin/main"). Si el
-usuario vuelve con más pedidos, el flujo es:
+**En curso: automatizar `iClosed_Raw` (hoy es 100% manual, el usuario pega el export).**
+iClosed tiene API REST real + webhooks (no hay que adivinar nada, está confirmado contra
+su OpenAPI spec pública en `developer.iclosed.io`):
+- Base URL: `https://public.api.iclosed.io`. Auth: header `Authorization: Bearer <API key>`
+  (la key ya incluye su propio prefijo `iclosed_...`).
+- El endpoint correcto es **`GET /v1/eventCalls`** (no `/v1/contacts`) — es el único que trae
+  UTM (Campaign/Ad Set/Ad vía `utm` array de `{utmKey, utmValue}`), el outcome de la llamada
+  (`task[].outcome`, valores tipo WON/NO_SALE/QUALIFIED/UNQUALIFIED/PENDING/...), y las
+  respuestas a custom fields (`secondaryAnswers`/`questions`) todo junto por call. `Lead Score`
+  case casi seguro un custom field ahí adentro, hay que confirmar el nombre exacto con data real.
+- Estado: el usuario ya generó su `ICLOSED_API_KEY` y la guardó en Script Properties de Apps
+  Script (mismo lugar que `META_TOKEN`/`POSTHOG_API_KEY`). Se agregó `debugIClosed()` a
+  `Code.gs` (loguea 5 event calls de los últimos 14 días, JSON crudo) para que el usuario la
+  corra y pegue el output real -- **falta que la corra y comparta el log** para poder mapear
+  los campos exactos (qué UTM keys aparecen, cómo se llama el custom field de Lead Score, y
+  qué valores de `outcome` corresponden a Real MQL Yes/No) y recién ahí escribir `syncIClosed()`
+  siguiendo el mismo patrón que `syncMeta()`/`syncPostHog()` (trigger diario + upsert).
+- Si se retoma en una sesión nueva: no repetir la investigación de la API, ya está resuelta acá
+  arriba — ir directo a correr/leer `debugIClosed()` y diseñar el mapeo.
+
+Fuera de eso, no hay más pedidos pendientes del usuario a esta fecha — todo lo demás
+solicitado está implementado, commiteado, y pusheado (repo `ssw-dashboard` está "up to date
+with origin/main"). Si el usuario vuelve con más pedidos, el flujo es:
 
 1. Leer este HANDOFF.md primero.
 2. Editar `/Users/manueldorado/Claude Code/ssw-dashboard/index.html` directo (es el mismo
@@ -227,22 +289,30 @@ usuario vuelve con más pedidos, el flujo es:
 3. Probar en un servidor local (`python3 -m http.server` en esa carpeta) + Browser pane
    antes de dar por terminado cualquier cambio — este proyecto tiene antecedentes de bugs
    sutiles (table-layout, z-order de charts, encoding) que solo se detectaron probando en
-   vivo, no revisando el código a ojo.
+   vivo, no revisando el código a ojo. Cuidado con el caché del Browser pane sobre
+   `index.html` -- si un cambio no se refleja al navegar, agregar un query param
+   (`?cb=<numero>`) a la URL para forzar recarga.
 4. Hacer `git add`/`git commit` (esto lo hace Claude), y decirle al usuario que corra
-   `git push` (él lo hace, ya tiene SSH configurado, no debería pedir nada).
-5. Si el pedido es sobre `Code.gs` (Apps Script): recordar que la fuente de verdad vive
-   en el editor de Apps Script (atado a la Sheet), no en este repo — palenta el nuevo
+   `git push` (él lo hace, ya tiene SSH configurado, no debería pedir nada) -- siempre con
+   el `cd` completo al repo, no solo `git push` a secas (su terminal no arranca parado ahí).
+5. Antes de que el usuario publique, mostrarle un preview en vivo (servidor local + Browser
+   pane) para que lo revise -- no alcanza con decir "ya lo probé y anda".
+6. Si el pedido es sobre `Code.gs` (Apps Script): recordar que la fuente de verdad vive
+   en el editor de Apps Script (atado a la Sheet), no en este repo — pegale el nuevo
    código ahí primero (Cmd+A, borrar, pegar completo — el usuario tuvo problemas antes
    pegando parches parciales), y después traer la copia actualizada a este repo también.
 
 Pendiente opcional (no pedido, solo sugerido si surge la oportunidad):
-- Limpiar `doGet()` de Code.gs si se vuelve a tocar ese archivo.
 - Si el volumen de datos sigue creciendo mucho (Meta_Raw ya tiene ~9,500 filas), vigilar
   que Google Sheets no se ponga lento — no es un problema todavía.
 - Qualified MQL / Cost per Qualified MQL hoy solo están en Big Numbers -- si el usuario
   los quiere también en la tabla Creative Performance o como métrica del scatter, es
   agregar `mqlQualified`/`cpqmql` a `aggregateByAd()`, la tabla, y `METRIC_OPTIONS`
   (mismo patrón que `mqlYes`/`mqlNo`/`cpsch`).
+- `Frequency` sigue siendo un estimado sesgado a la baja (ver §6) en todos lados donde
+  aparece fuera de Big Numbers (de donde ya se sacó) -- selector de métricas del chart,
+  tabla de Creative Performance, ejes del scatter. El usuario fue avisado, no pidió sacarlo
+  de ahí también, pero si lo pide es el mismo tipo de cambio que ya se hizo en Big Numbers.
 
 ## 8. Convenciones de código
 
