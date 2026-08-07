@@ -333,6 +333,42 @@ function fetchPostHogDay(day, apiKey, projectId, host) {
   });
 }
 
+// Corrida manual, UNA vez (o cada tanto): trae PostHog año-a-la-fecha, día por día, pero
+// escribiendo la Sheet MES A MES (upsertRows por chunk, no todo junto al final) -- así si
+// Apps Script corta la ejecución a mitad de camino (límite de tiempo de ejecución), lo ya
+// escrito queda guardado y alcanza con volver a correr la función para retomar el resto,
+// en vez de perder todo el trabajo. syncPostHog() sigue cubriendo solo la ventana de
+// WINDOW_DAYS -- esta función es la que llena el historial que nunca se backfilleó.
+function backfillPostHog() {
+  var props = PropertiesService.getScriptProperties();
+  var apiKey = props.getProperty('POSTHOG_API_KEY');
+  var projectId = props.getProperty('POSTHOG_PROJECT_ID');
+  var host = props.getProperty('POSTHOG_HOST');
+  if (!apiKey || !projectId || !host) throw new Error('Faltan POSTHOG_API_KEY / POSTHOG_PROJECT_ID / POSTHOG_HOST en Script Properties');
+
+  var since = new Date().getUTCFullYear() + '-01-01';
+  var until = daysAgo(1); // hasta ayer, igual que syncPostHog -- hoy queda incompleto y ensucia el bounce rate
+  var chunks = monthChunks(since, until);
+
+  chunks.forEach(function (chunk) {
+    var rows = [];
+    var day = chunk.since;
+    while (day <= chunk.until) {
+      try {
+        rows = rows.concat(fetchPostHogDay(day, apiKey, projectId, host));
+      } catch (e) {
+        Logger.log('PostHog ' + day + ' FALLO, sigo con el resto: ' + e.message);
+      }
+      day = addDays(day, 1);
+    }
+    upsertRows(POSTHOG_SHEET, POSTHOG_HEADERS, rows, chunk.since, chunk.until);
+    Logger.log('PostHog backfill ' + chunk.since + '..' + chunk.until + ': ' + rows.length + ' filas');
+    Utilities.sleep(1000);
+  });
+
+  Logger.log('Backfill PostHog listo desde ' + since + ' hasta ' + until);
+}
+
 // ===================== SHEET HELPERS =====================
 
 function upsertRows(sheetName, headers, newRows, since, until, accountFilter) {
