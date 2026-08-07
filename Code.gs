@@ -15,16 +15,6 @@ var META_HEADERS = ['Date', 'Account', 'Campaign', 'Ad Set', 'Ad', 'Spend', 'Imp
   'Clicks', 'Reach', 'Frequency', 'LP Views', 'Registrations', 'Schedules (Meta)', 'Video Views', 'Thumbnail URL'];
 var POSTHOG_HEADERS = ['Date', 'Ad', 'Sessions', 'Bounced Sessions'];
 
-// ===================== WEB APP =====================
-// Sirve el dashboard como página web pública. Requiere un archivo HTML llamado
-// "Dashboard" en este mismo proyecto de Apps Script (con el contenido de
-// SSW_AccountDashboard.html adentro). Deploy > New deployment > Web app.
-function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Dashboard')
-    .setTitle('SSW Account Dashboard')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-}
-
 // ===================== ENTRY POINTS =====================
 
 function runDailySync() {
