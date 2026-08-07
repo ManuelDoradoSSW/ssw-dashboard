@@ -266,6 +266,28 @@ function debugIClosed() {
   Logger.log(resp.getContentText());
 }
 
+// Prueba manual #2: debugIClosed() no trajo "Lead Score" en ningún lado (solo preguntas de
+// intake tipo modelo de negocio/revenue/ad spend). La spec de /v1/contacts/detail sí expone
+// "CustomFieldAssociation" -- ahí es donde debería vivir Lead Score (y potencialmente Real
+// MQL, si también es un custom field en vez de derivarse de task.outcome). Correr esto con
+// un contactId real (ej. uno que haya salido en el log de debugIClosed) para confirmar.
+function debugIClosedContactDetail(contactId) {
+  // el botón Run del editor no permite pasar argumentos -- si corrés esto directo desde el
+  // dropdown, sin llamarla desde otro lado, usa este contactId de ejemplo (salió en el log
+  // de debugIClosed()). Para probar con otro, cambiá este número.
+  contactId = contactId || 4297233;
+  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
+  if (!apiKey) throw new Error('Falta ICLOSED_API_KEY en Script Properties');
+
+  var url = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId;
+  var resp = UrlFetchApp.fetch(url, {
+    headers: { Authorization: 'Bearer ' + apiKey },
+    muteHttpExceptions: true
+  });
+  Logger.log('STATUS ' + resp.getResponseCode());
+  Logger.log(resp.getContentText());
+}
+
 // ===================== POSTHOG =====================
 
 function debugWebStats() {
