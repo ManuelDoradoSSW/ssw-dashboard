@@ -184,6 +184,16 @@ Tracking template de Meta (confirmado con el usuario):
 
 ## 6. Problemas conocidos / bugs abiertos
 
+- **Cobertura de PostHog muy baja (~17% de los ads)**: solo ~74 de 436 ads en Meta_Raw
+  tienen alguna fila en PostHog_Raw. Causa: `syncPostHog()` solo mantiene una ventana
+  rolling de 10 días (igual que `syncMeta`), pero a diferencia de Meta **nunca se corrió
+  un backfill histórico de PostHog** (no existe un `backfillPostHog()`). Antes esto se
+  manifestaba como Bounce Rate "0%" en ads con mucho spend pero sin sesiones matcheadas
+  (indistinguible de un 0% real porque `safeDiv(bounced, sessions)` da 0 si sessions=0) —
+  ya arreglado en el HTML: la tabla muestra "—" y el scatter excluye esos ads cuando el eje
+  usa Bounce Rate (ver `sessions > 0` checks cerca de `renderCreativeTable`/`renderScatter`).
+  Pendiente real (no resuelto, solo el síntoma): si el usuario quiere Bounce Rate histórico
+  correcto, hay que escribir un `backfillPostHog()` en Code.gs análogo a `backfillMeta()`.
 - **Meta "Schedules" no se puede aislar por API** sin crear Custom Conversions en Meta
   Ads Manager para "Schedule", "Contact" y "2ndCallBooked" (hoy los 3 vienen mezclados
   bajo `offsite_conversion.fb_pixel_custom`). Si en algún momento se crean esas Custom
