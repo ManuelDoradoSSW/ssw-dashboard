@@ -1180,7 +1180,7 @@ function renderCreativeTable(rows) {
       <td>${fmtInt(r.mqlBlank)}</td>
       <td>${fmtMoney(r.cpsch)}</td>
       <td>${fmtPct(r.hookRate)}</td>
-      <td>${fmtPct(r.bounceRate)}</td>
+      <td>${r.sessions > 0 ? fmtPct(r.bounceRate) : '—'}</td>
     </tr>
   `).join('');
 
@@ -1249,7 +1249,11 @@ function renderScatter(rows) {
   const yKey = document.getElementById('scatter-y').value;
   const xMeta = METRIC_OPTIONS.find(m => m.key === xKey);
   const yMeta = METRIC_OPTIONS.find(m => m.key === yKey);
-  const agg = applyScatterThresholdFilters(aggregateByAd(rows).filter(r => r.impressions > 0));
+  // Bounce Rate depende de sesiones de PostHog -- un ad sin sesiones matcheadas da
+  // sessions=0 y safeDiv devuelve 0, que se ve idéntico a "0% bounce" real. Si algún eje
+  // usa Bounce Rate, se excluyen los ads sin sesiones para no graficar ese falso 0%.
+  const usesBounceRate = xKey === 'bounceRate' || yKey === 'bounceRate';
+  const agg = applyScatterThresholdFilters(aggregateByAd(rows).filter(r => r.impressions > 0 && (!usesBounceRate || r.sessions > 0)));
 
   const css = getComputedStyle(document.documentElement);
   const s1 = css.getPropertyValue('--series-1').trim();
