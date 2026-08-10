@@ -183,7 +183,28 @@
   }
   .bignum-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px 16px; }
   .bignum-tile { padding: 4px; }
-  .bignum-tile[title] { cursor: help; }
+  /* tooltip propio en vez de confiar en el title nativo del navegador -- ese no se ve
+     consistente entre navegadores/SO, esto sí se ve siempre igual */
+  .bignum-tile[data-tooltip] { position: relative; cursor: help; }
+  .bignum-tile[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%; left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 6px;
+    background: var(--text-primary);
+    color: var(--surface-1);
+    font-size: 11px; font-weight: 700; text-transform: none; letter-spacing: normal;
+    padding: 6px 9px;
+    border-radius: 6px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .12s;
+    z-index: 50;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  }
+  .bignum-tile[data-tooltip]:hover::after { opacity: 1; }
   .bignum-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; line-height: 1.3; min-height: 2.6em; }
   .bignum-value { font-size: 24px; font-weight: 600; font-variant-numeric: proportional-nums; color: var(--accent); }
   .bignum-delta { font-size: 13px; font-weight: 600; margin-top: 4px; min-height: 16px; }
@@ -361,27 +382,27 @@
           <div class="bignum-value" id="bn-clicks">–</div>
           <div class="bignum-delta" id="bn-clicks-delta"></div>
         </div>
-        <div class="bignum-tile" title="Spend / Impressions × 1000">
+        <div class="bignum-tile" data-tooltip="Spend / Impressions × 1000">
           <div class="bignum-label">CPM</div>
           <div class="bignum-value" id="bn-cpm">–</div>
           <div class="bignum-delta" id="bn-cpm-delta"></div>
         </div>
-        <div class="bignum-tile" title="Clicks / Impressions">
+        <div class="bignum-tile" data-tooltip="Clicks / Impressions">
           <div class="bignum-label">CTR</div>
           <div class="bignum-value" id="bn-ctr">–</div>
           <div class="bignum-delta" id="bn-ctr-delta"></div>
         </div>
-        <div class="bignum-tile" title="Spend / Reach × 1000">
+        <div class="bignum-tile" data-tooltip="Spend / Reach × 1000">
           <div class="bignum-label">Cost per 1000 Meta Accounts (estimated)</div>
           <div class="bignum-value" id="bn-cp1kreach">–</div>
           <div class="bignum-delta" id="bn-cp1kreach-delta"></div>
         </div>
-        <div class="bignum-tile" title="Impressions / Reach">
+        <div class="bignum-tile" data-tooltip="Impressions / Reach">
           <div class="bignum-label">Frequency (estimated)</div>
           <div class="bignum-value" id="bn-frequency">–</div>
           <div class="bignum-delta" id="bn-frequency-delta"></div>
         </div>
-        <div class="bignum-tile" title="Real MQL / LP Views">
+        <div class="bignum-tile" data-tooltip="Real MQL / LP Views">
           <div class="bignum-label">Funnel Conversion Rate</div>
           <div class="bignum-value" id="bn-funnelcvr">–</div>
           <div class="bignum-delta" id="bn-funnelcvr-delta"></div>
@@ -401,7 +422,7 @@
           <div class="bignum-value" id="bn-spam">–</div>
           <div class="bignum-delta" id="bn-spam-delta"></div>
         </div>
-        <div class="bignum-tile" title="Spend / Real MQL">
+        <div class="bignum-tile" data-tooltip="Spend / Real MQL">
           <div class="bignum-label">Cost per Real MQL</div>
           <div class="bignum-value" id="bn-cpsch">–</div>
           <div class="bignum-delta" id="bn-cpsch-delta"></div>
@@ -411,7 +432,7 @@
           <div class="bignum-value" id="bn-qualified-mql">–</div>
           <div class="bignum-delta" id="bn-qualified-mql-delta"></div>
         </div>
-        <div class="bignum-tile" title="Spend / Qualified MQL">
+        <div class="bignum-tile" data-tooltip="Spend / Qualified MQL">
           <div class="bignum-label">Cost per Qualified MQL</div>
           <div class="bignum-value" id="bn-cpqmql">–</div>
           <div class="bignum-delta" id="bn-cpqmql-delta"></div>
