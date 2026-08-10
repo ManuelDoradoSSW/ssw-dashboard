@@ -56,17 +56,27 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
   protección liviana del lado del cliente, **no seguridad real** (la password queda
   visible en "view source", y la Google Sheet detrás sigue siendo pública vía link) —
   el usuario lo sabe, lo pidió igual como filtro contra "alguien abre el link al azar".
-- Big Numbers: 10 tiles en 2 grupos con sub-header (`.bignum-group`), grid
-  `auto-fit minmax(150px,1fr)`. **Media** (5): Spend, Clicks, CPM, CTR, Cost per 1000 Meta
-  Accounts. **Lead Quality (iClosed)** (5): Real MQLs, Spam, Cost per Real MQL, Qualified
-  MQLs, Cost per Qualified MQL. Solo el valor numérico de cada tile usa el color de acento
-  (`var(--accent)`, dorado) -- labels/headers/botones usan `--text-primary` (neutro), a
-  propósito, para que no todo grite al mismo volumen (pedido de rediseño 2026-08-07).
+- Big Numbers: 12 tiles en 2 grupos con sub-header (`.bignum-group`), grid
+  `auto-fit minmax(150px,1fr)`. **Media** (7): Spend, Clicks, CPM, CTR, Cost per 1000 Meta
+  Accounts (estimated), Frequency (estimated), Funnel Conversion Rate. **Lead Quality
+  (iClosed)** (5): Real MQLs, Spam, Cost per Real MQL, Qualified MQLs, Cost per Qualified
+  MQL. Solo el valor numérico de cada tile usa el color de acento (`var(--accent)`, dorado)
+  -- labels/headers/botones usan `--text-primary` (neutro), a propósito, para que no todo
+  grite al mismo volumen (pedido de rediseño 2026-08-07).
   "Cost per 1000 Meta Accounts" es el mismo cálculo que Meta llama oficialmente "Cost per
   1,000 Accounts Center Accounts Reached" (renombre de "cost per 1000 people reached", no
   es una métrica nueva) — `spend / reach * 1000`, ya calculable con Meta_Raw, no requirió
-  tocar Code.gs. **Frequency se sacó de acá** (ver §6, sesgado a la baja en cualquier
-  rango >1 día) pero sigue en el chart/tabla/scatter.
+  tocar Code.gs. **Frequency se había sacado de Big Numbers el 2026-08-07 por el sesgo de
+  Reach sumado por día (ver §6), pero se volvió a agregar el mismo día** a pedido del equipo
+  (Sam/Josh en Slack) -- el equipo prefiere tenerlo como estimado etiquetado antes que no
+  tenerlo. **"Cost per 1000 Meta Accounts" sufre el mismo sesgo** (Sam reportó $57 vs ~$450
+  calculado a mano) -- no es un bug de código, es la misma causa que Frequency. Se le agregó
+  el sufijo "(estimated)" al label en vez de sacarlo, mismo criterio. **"LP View to Real MQL
+  Rate"** = `mqlYes / lpViews`, pedido por Josh (page views → booked appointments) -- ojo,
+  **no es Registrations** (`mqlYes+mqlNo+mqlBlank`): se probó esa versión primero pero Manu
+  aclaró que "booked appointment" en su negocio es específicamente Real MQL (Registrations
+  incluye spam, que no es un booking real). Todo lo de arriba (Cost per 1000/Frequency) sigue
+  con el mismo sesgo en el chart-select/tabla/scatter, no solo en Big Numbers.
 - Spend chart: **es un solo chart combinado bar+line con doble eje** (`chart-spend`,
   `yAxisID: 'y'/'y1'`, `lineOnTopPlugin` para que la línea quede siempre visualmente
   arriba de las barras) -- se intentó partir en dos charts de un solo eje (mejor práctica
@@ -210,14 +220,20 @@ la automatización en curso -- ver §7).
   `https://api-docs-iclosed.redocly.app/_bundle/openapi/v1/openapi.json`, es un Redoc SPA,
   para leerla de una hay que bajar el JSON directo, no funciona hacer WebFetch a la URL
   del Redoc porque el contenido se renderiza client-side).
-- Endpoint para attribution: `GET /v1/eventCalls` (no `/v1/contacts`, ese no trae UTM).
-  Filtros útiles: `eventType=PAST`, `dateFrom`/`dateTo` (filtran por `dateTime`, no por
-  creación), `limit`/`page` (paginado, máx 100/page), `orderColumn`/`orderBy`. Cada call
-  trae `contactId`, `dateTime`/`dateTimeUTC`, y `utm` (array `{utmKey,utmValue}` -- filtrar
-  por `utm_source`/`utm_medium`/`utm_campaign`/`utm_content`, el resto es ruido de tracking
-  de Meta/browser). `task[].outcome` también está acá (WON/NO_SALE/QUALIFIED/UNQUALIFIED/
-  PENDING/APPROVED/REJECTED/PENDING_OUTCOME) pero **no se termina usando** -- Real MQL es un
-  custom field separado, no se deriva de `outcome`.
+- `GET /v1/eventCalls` (filtros `eventType=PAST`, `dateFrom`/`dateTo` sobre `dateTime`,
+  `limit`/`page` paginado máx 100/page) da `contactId`, `dateTime`, y `utm` (array
+  `{utmKey,utmValue}` -- filtrar por `utm_source`/`utm_medium`/`utm_campaign`/`utm_content`,
+  el resto es ruido de tracking de Meta/browser). **OJO: esto NO es la fuente correcta para
+  el sync** -- fechar por "cuándo ocurrió la llamada" undercuenta leads que todavía no
+  tuvieron su call (ver §7, confirmado con data real: 17 vs 29 esperados en una ventana de
+  prueba). También trae `task[].outcome` (WON/NO_SALE/QUALIFIED/UNQUALIFIED/PENDING/
+  APPROVED/REJECTED/PENDING_OUTCOME) -- no se usa para Real MQL (es un custom field aparte),
+  pero podría servir a futuro para "Show Rate" (ver pendiente en §7).
+- **La fuente correcta es `GET /v1/contacts`** (lista, filtrable por `timeFrom`/`timeTo`
+  sobre `joinedTime` -- esto sí matchea "Contact Creation Date" del export manual), y por
+  cada contacto de esa lista pedir `/v1/contacts/detail?contactId=X` para sacar `referrerUrl`
+  (UTM de un solo touch, hay que parsear el query string) + los custom fields. Ver §7 para
+  el estado exacto de la reescritura.
 - Endpoint para Real MQL / Lead Score: `GET /v1/contacts/detail?contactId=X` (un contacto
   a la vez, sin endpoint bulk) → `data.CustomFieldAssociation[]`, filtrar por
   `customField.identifier === 'real-mql'` / `'lead-score'` y leer `CustomFieldAnswer[0].answer`.
@@ -267,48 +283,67 @@ la automatización en curso -- ver §7).
 
 ## 7. Próximos pasos
 
-**Automatización de `iClosed_Raw`: código escrito, FALTA VERIFICAR EN VIVO.** `syncIClosed()`
-ya está en `Code.gs` (commit `d46a8c1`), pero el usuario todavía no lo corrió -- no dar por
-sentado que funciona hasta que confirme una corrida real y revise las filas en la Sheet.
+**Automatización de `iClosed_Raw`: EN CURSO, el diseño actual de `syncIClosed()` está ROTO,
+no confiar en él ni activar el trigger.** Se escribió una primera versión basada en
+`/v1/eventCalls` (commit `d46a8c1`) que el usuario corrió -- trajo **17 filas de 23 calls**
+para una ventana donde el export manual (que el usuario compartió, un .xlsx real descargado
+de iClosed llamado "Global Data - contacts") tiene **29 contactos de Meta genuinos**. No es
+un bug menor, es un ~40% de undercounting.
 
-Diseño confirmado con data real (no es especulación, se probó contra la cuenta del usuario):
-- `GET /v1/eventCalls?eventType=PAST&dateFrom=X&dateTo=Y&limit=100&page=N` (paginado) da,
-  por call: `dateTime`/`dateTimeUTC`, `contactId`, y `utm` (array `{utmKey,utmValue}`) con
-  `utm_source`/`utm_medium`/`utm_campaign`/`utm_content` mezclados con ruido (`_fbp`, `_fbc`,
-  `fbclid`, etc. -- se ignoran, solo importan esos 4). `utm_medium` = Ad Set, `utm_campaign` =
-  Campaign, `utm_content` = Ad -- confirmado que matchea 1:1 el tracking template de Meta, y
-  `utm_content` ya viene con espacios como "+" igual que el export manual (el
-  `decodePlusEncoded`/`resolveAdName` del HTML lo resuelve sin cambios).
-- **Real MQL y Lead Score NO están en eventCalls** (ahí solo hay preguntas de intake tipo
-  modelo de negocio/revenue). Son custom fields a nivel **CONTACTO**, no de la llamada:
-  `GET /v1/contacts/detail?contactId=X` → `data.CustomFieldAssociation[]`, cada entrada
-  `{customField: {name, identifier}, CustomFieldAnswer: [{answer}]}`. `identifier: 'real-mql'`
-  → answer tipo `"YES"`/`"NO"`. `identifier: 'lead-score'` → answer tipo `"A: High Quality"`
-  (con prefijo "A: " -- el check `.includes('LOW')` del HTML lo sigue clasificando bien igual,
-  no rompe nada). No hay endpoint bulk para esto, `syncIClosed()` pide un contacto a la vez
-  por cada `contactId` único en la ventana (manejable para `WINDOW_DAYS`, no para backfill
-  masivo sin agregar sleep/chunking si algún día se necesita).
-- `syncIClosed()` sigue el mismo patrón rolling-window + `upsertRows` que `syncMeta`/
-  `syncPostHog`, agregado a `runDailySync()` y a `createTriggers()` (trigger nuevo a las 5am).
+**Causa raíz confirmada** (comparando el .xlsx real contra la API, no es especulación):
+- El export manual sale de la vista de **Contactos** de iClosed, fechado por
+  `Contact Creation Date` (cuándo entró el lead) -- incluye TODOS los leads, tengan o no una
+  llamada todavía.
+- `syncIClosed()` v1 usaba `/v1/eventCalls` (fechado por cuándo *ocurrió* la llamada) --
+  se pierden todos los leads que crearon el contacto en la ventana pero cuya llamada cayó
+  afuera (o no la tuvieron todavía). **La fuente correcta es Contactos, no Calls.**
+- Segundo hallazgo, más difícil: el export manual junta **múltiples touches por lead**
+  separados por coma en UTM Campaign/Medium/Content (ej. un lead que clickeó 2 ads distintos
+  antes de agendar) -- eso sale de un reporte interno de iClosed. La API pública solo expone
+  `referrerUrl` por contacto (`GET /v1/contacts/detail?contactId=X`, un solo touch, no un
+  array). De los 29 leads de fb_ad en la ventana de prueba, **4 (14%) son multi-touch** --
+  con la API se les asignaría un solo ad, no todos los que tocaron.
+- El usuario está de acuerdo en aceptar esa pérdida del 14% (single-touch vía `referrerUrl`)
+  a cambio de automatizar el resto -- **pero falta confirmar si `referrerUrl` es first-touch
+  o last-touch** antes de decidir a qué ad exacto atribuir esos casos multi-touch. Se agregó
+  `debugIClosedFindByEmail(email)` a `Code.gs` (busca por email vía `/v1/contacts?search=`,
+  trae el contactId, y pide el detail) -- **falta que el usuario la corra** con un lead
+  multi-touch conocido (ej. `gojohn@gmail.com`, que en el export tiene 2 ads) y comparta el
+  log, comparando el orden real contra `referrerUrl`.
+- Real MQL y Lead Score SÍ están confirmados y andan bien: son custom fields a nivel
+  **CONTACTO** vía `GET /v1/contacts/detail?contactId=X` → `data.CustomFieldAssociation[]`,
+  filtrando por `customField.identifier === 'real-mql'` / `'lead-score'`, leyendo
+  `CustomFieldAnswer[0].answer`. Eso no cambia con el rediseño, sigue sirviendo igual.
 
-**Pasos pendientes para el usuario (en orden, no saltear):**
-1. Pegar el `Code.gs` completo actualizado en Apps Script (Cmd+A, borrar, pegar, Cmd+S).
-2. Correr `syncIClosed` manualmente desde el dropdown (NO activar el trigger todavía) y
-   revisar el log de filas escritas.
-3. Abrir la tab `iClosed_Raw` en la Sheet y mirar a ojo las filas nuevas de los últimos días
-   -- ¿Campaign/Ad Set/Ad tienen pinta correcta? ¿Real MQL/Lead Score tienen los valores
-   esperados comparado con lo que el usuario ve en la UI de iClosed para esos mismos leads?
-4. Recién si eso se ve bien: correr `createTriggers()` una vez para activar el trigger diario
-   de las 5am (esto borra y recrea los 3 triggers -- syncMeta/syncPostHog siguen intactos,
-   solo se agrega el de iClosed).
-5. **Importante**: una vez activo el trigger, `upsertRows` va a REEMPLAZAR cualquier fila de
-   los últimos `WINDOW_DAYS` (10 días) en cada corrida -- si el usuario sigue pegando el
-   export manual a mano en ese rango, la próxima corrida automática lo va a pisar. Avisarle
-   esto explícitamente antes de que se confunda por qué "desaparecieron" ediciones manuales
-   recientes. Data de antes de esa ventana (pegada a mano, histórica) no se toca.
-- Si se retoma en sesión nueva y el usuario dice que ya lo probó: preguntar primero cómo salió
-  antes de asumir que está en producción -- este ítem se marcó "en curso" varias veces en esta
-  misma sesión y recién quedó realmente escrito al final.
+**Qué falta hacer (en orden) para dejar esto realmente andando:**
+1. Confirmar first-touch vs last-touch de `referrerUrl` (correr `debugIClosedFindByEmail`,
+   ver arriba).
+2. Reescribir `syncIClosed()` para que la fuente sea `GET /v1/contacts` (lista, filtrable por
+   `timeFrom`/`timeTo` sobre `joinedTime`) en vez de `/v1/eventCalls` -- enumerar contactos
+   creados en la ventana, y por cada uno pedir `/v1/contacts/detail` para sacar `referrerUrl`
+   (parsear su query string para utm_campaign/utm_medium/utm_content) + Real MQL + Lead Score,
+   todo en una sola llamada por contacto (ya no hace falta la llamada a `/v1/eventCalls` para
+   nada, `contacts/detail` ya trae todo lo necesario).
+3. Recién ahí volver a probar manualmente (correr, mirar la Sheet, comparar contra el export
+   manual de una ventana conocida) antes de tocar `createTriggers()`.
+4. **No activar el trigger de `syncIClosed`** hasta que el punto 3 esté confirmado en vivo --
+   una vez activo, cada corrida reemplaza las filas de los últimos `WINDOW_DAYS` (10 días) en
+   `iClosed_Raw`, así que si el diseño sigue mal, el trigger diario perpetuaría el problema
+   solo, sin que nadie lo note hasta mirar los números.
+- Si se retoma en sesión nueva: NO asumir que `syncIClosed()` funciona por más que el código
+  ya esté en `Code.gs` -- este ítem viene marcado "en curso" desde hace varias sesiones y
+  recién en la última se encontró que el diseño de origen (Calls) estaba mal. Preguntar
+  primero en qué quedó antes de tocar nada.
+
+**Pendiente, explícitamente pateado para después (pedido de Josh vía Slack, el usuario dijo
+"hagámoslo después"):** agregar Show Rate (% de calls agendadas que efectivamente se
+mostraron, no no-show) y Closes (deals ganados) al dashboard, pulled from iClosed. Ninguno de
+los dos tiene datos en el pipeline hoy -- Show Rate necesitaría el outcome/no-show status de
+la llamada (visto en `task[].outcome`/`noSaleReason` de `/v1/eventCalls`, valores tipo
+NO_SHOW/REJECTED/WON, o el campo custom field "Call Outcome"/"No Sale Reason" que ya vimos en
+`CustomFieldAssociation`), y Closes necesitaría datos de Deals/Transactions (endpoints
+`/v1/deals`/`/v1/transactions` de la API, no explorados todavía). No arrancar esto sin que el
+usuario lo pida explícitamente -- fue pateado a propósito.
 
 Fuera de eso, no hay más pedidos pendientes del usuario a esta fecha — todo lo demás
 solicitado está implementado, commiteado, y pusheado (repo `ssw-dashboard` está "up to date
