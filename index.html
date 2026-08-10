@@ -371,9 +371,19 @@
           <div class="bignum-delta" id="bn-ctr-delta"></div>
         </div>
         <div class="bignum-tile">
-          <div class="bignum-label">Cost per 1000 Meta Accounts</div>
+          <div class="bignum-label">Cost per 1000 Meta Accounts (estimated)</div>
           <div class="bignum-value" id="bn-cp1kreach">–</div>
           <div class="bignum-delta" id="bn-cp1kreach-delta"></div>
+        </div>
+        <div class="bignum-tile">
+          <div class="bignum-label">Frequency (estimated)</div>
+          <div class="bignum-value" id="bn-frequency">–</div>
+          <div class="bignum-delta" id="bn-frequency-delta"></div>
+        </div>
+        <div class="bignum-tile">
+          <div class="bignum-label">Funnel Conversion Rate</div>
+          <div class="bignum-value" id="bn-funnelcvr">–</div>
+          <div class="bignum-delta" id="bn-funnelcvr-delta"></div>
         </div>
       </div>
     </div>
@@ -952,6 +962,8 @@ function renderBigNumbers(rows) {
   document.getElementById('bn-cpm').textContent = fmtMoney(safeDiv(s.spend, s.impressions) * 1000);
   document.getElementById('bn-ctr').textContent = fmtPct(safeDiv(s.clicks, s.impressions));
   document.getElementById('bn-cp1kreach').textContent = fmtMoney(safeDiv(s.spend, s.reach) * 1000);
+  document.getElementById('bn-frequency').textContent = fmtDec(safeDiv(s.impressions, s.reach));
+  document.getElementById('bn-funnelcvr').textContent = fmtPct(safeDiv(s.mqlYes + s.mqlNo + s.mqlBlank, s.lpViews));
   document.getElementById('bn-real-mql').textContent = fmtInt(s.mqlYes);
   document.getElementById('bn-spam').textContent = fmtInt(s.mqlNo);
   document.getElementById('bn-cpsch').textContent = fmtMoney(safeDiv(s.spend, s.mqlYes));
@@ -959,7 +971,7 @@ function renderBigNumbers(rows) {
   document.getElementById('bn-cpqmql').textContent = fmtMoney(safeDiv(s.spend, s.mqlQualified));
 
   const compareEl = document.getElementById('compare-range-label');
-  const deltaKeys = ['spend', 'clicks', 'cpm', 'ctr', 'cp1kreach', 'real-mql', 'spam', 'cpsch', 'qualified-mql', 'cpqmql'];
+  const deltaKeys = ['spend', 'clicks', 'cpm', 'ctr', 'cp1kreach', 'frequency', 'funnelcvr', 'real-mql', 'spam', 'cpsch', 'qualified-mql', 'cpqmql'];
 
   if (!filterState.compare || !filterState.dateFrom || !filterState.dateTo) {
     deltaKeys.forEach(k => {
@@ -994,6 +1006,10 @@ function renderBigNumbers(rows) {
   const prevCtr = safeDiv(p.clicks, p.impressions);
   const curCp1kReach = safeDiv(s.spend, s.reach) * 1000;
   const prevCp1kReach = safeDiv(p.spend, p.reach) * 1000;
+  const curFreq = safeDiv(s.impressions, s.reach);
+  const prevFreq = safeDiv(p.impressions, p.reach);
+  const curFunnelCvr = safeDiv(s.mqlYes + s.mqlNo + s.mqlBlank, s.lpViews);
+  const prevFunnelCvr = safeDiv(p.mqlYes + p.mqlNo + p.mqlBlank, p.lpViews);
   const curCpsch = safeDiv(s.spend, s.mqlYes);
   const prevCpsch = safeDiv(p.spend, p.mqlYes);
   const curCpqmql = safeDiv(s.spend, s.mqlQualified);
@@ -1004,6 +1020,8 @@ function renderBigNumbers(rows) {
   setDelta('cpm', curCpm, prevCpm, 'up-bad');
   setDelta('ctr', curCtr, prevCtr, 'up-good');
   setDelta('cp1kreach', curCp1kReach, prevCp1kReach, 'up-bad');
+  setDelta('frequency', curFreq, prevFreq, 'up-good');
+  setDelta('funnelcvr', curFunnelCvr, prevFunnelCvr, 'up-good');
   setDelta('real-mql', s.mqlYes, p.mqlYes, 'up-good');
   setDelta('spam', s.mqlNo, p.mqlNo, 'up-bad');
   setDelta('cpsch', curCpsch, prevCpsch, 'up-bad');
