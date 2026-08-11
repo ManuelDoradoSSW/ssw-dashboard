@@ -480,6 +480,8 @@
             <th data-key="mqlNo">Real MQL (No)</th>
             <th data-key="mqlBlank">Real MQL (Blank)</th>
             <th data-key="cpsch">Cost / Real MQL</th>
+            <th data-key="mqlQualified">Qualified MQL</th>
+            <th data-key="cpqmql">Cost / Qualified MQL</th>
             <th data-key="hookRate">Hook Rate</th>
             <th data-key="bounceRate">Bounce Rate (PostHog)</th>
           </tr>
@@ -970,7 +972,8 @@ function aggregateByAd(rows) {
       frequency: safeDiv(s.impressions, s.reach),
       hookRate: safeDiv(s.videoViews, s.impressions),
       bounceRate: safeDiv(s.bounced, s.sessions),
-      cpsch: safeDiv(s.spend, s.mqlYes)
+      cpsch: safeDiv(s.spend, s.mqlYes),
+      cpqmql: safeDiv(s.spend, s.mqlQualified)
     });
   });
 }
@@ -1219,6 +1222,8 @@ function renderCreativeTable(rows) {
       <td>${fmtInt(r.mqlNo)}</td>
       <td>${fmtInt(r.mqlBlank)}</td>
       <td>${fmtMoney(r.cpsch)}</td>
+      <td>${fmtInt(r.mqlQualified)}</td>
+      <td>${fmtMoney(r.cpqmql)}</td>
       <td>${fmtPct(r.hookRate)}</td>
       <td>${r.sessions > 0 ? fmtPct(r.bounceRate) : '—'}</td>
     </tr>
