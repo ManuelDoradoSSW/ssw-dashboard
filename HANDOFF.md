@@ -185,9 +185,11 @@ gviz, que viene vacía) — el parser lee por **posición fija de columna**, no 
 **`iClosed_Raw`** (7 columnas, desde 2026-08-06): `Date, Account, Campaign, Ad Set, Ad,
 Real MQL, Lead Score` — **manual, el usuario pega el export de iClosed acá**. `Real MQL`
 es texto `YES` / `NO` / vacío (vacío = contactos de antes del 14/6/2026 cuando no existía
-el campo, o algún hueco posterior). `Lead Score` (columna G, agregada 2026-08-06) es texto
-libre -- "Qualified" = cualquier valor no vacío que no contenga "LOW" (cubre "Quality",
-"High Quality", etc.); vacío o "Low Quality" no cuenta. Da la métrica "Qualified MQL",
+el campo, o algún hueco posterior). `Lead Score` (columna G, agregada 2026-08-06) tiene 3
+opciones reales confirmadas contra la Sheet: `"A: High Quality"`, `"B: Quality"`,
+`"C: Low Quality"`. "Qualified" = empieza con `"A:"` o `"B:"` (lista explícita, no un filtro
+de "no contiene LOW" -- se cambió a pedido del usuario 2026-08-08 para no depender de que
+la palabra "Low" aparezca si en el futuro se agrega una opción nueva). Da la métrica "Qualified MQL",
 **independiente de Real MQL** (no es un subconjunto de Real MQL=Yes) -- por eso en data
 vieja hay filas con Lead Score de calidad y Real MQL vacío (la columna Real MQL no existía
 antes del 14/6/2026), lo cual está documentado en un caveat visible en el dashboard, no es
