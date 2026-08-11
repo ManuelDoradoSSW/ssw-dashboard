@@ -71,12 +71,20 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
   (Sam/Josh en Slack) -- el equipo prefiere tenerlo como estimado etiquetado antes que no
   tenerlo. **"Cost per 1000 Meta Accounts" sufre el mismo sesgo** (Sam reportó $57 vs ~$450
   calculado a mano) -- no es un bug de código, es la misma causa que Frequency. Se le agregó
-  el sufijo "(estimated)" al label en vez de sacarlo, mismo criterio. **"LP View to Real MQL
+  el sufijo "(estimated)" al label en vez de sacarlo, mismo criterio. **"Funnel Conversion
   Rate"** = `mqlYes / lpViews`, pedido por Josh (page views → booked appointments) -- ojo,
-  **no es Registrations** (`mqlYes+mqlNo+mqlBlank`): se probó esa versión primero pero Manu
-  aclaró que "booked appointment" en su negocio es específicamente Real MQL (Registrations
-  incluye spam, que no es un booking real). Todo lo de arriba (Cost per 1000/Frequency) sigue
-  con el mismo sesgo en el chart-select/tabla/scatter, no solo en Big Numbers.
+  **no es Registrations** (`mqlYes+mqlNo+mqlBlank`): se probó esa versión primero (con el
+  label "LP View to Real MQL Rate") pero Manu aclaró que "booked appointment" en su negocio
+  es específicamente Real MQL (Registrations incluye spam, que no es un booking real) --
+  se corrigió la fórmula y se volvió a renombrar a "Funnel Conversion Rate". Todo lo de
+  arriba (Cost per 1000/Frequency) sigue con el mismo sesgo en el chart-select/tabla/scatter,
+  no solo en Big Numbers.
+- **Tooltips de fórmula en Big Numbers**: los 7 tiles calculados (CPM, CTR, Cost per 1000
+  Meta Accounts, Frequency, Funnel Conversion Rate, Cost per Real MQL, Cost per Qualified
+  MQL) muestran su fórmula al pasar el mouse. **Usa un tooltip CSS propio** (`data-tooltip`
+  + `::after`), NO el atributo `title` nativo del navegador -- se probó con `title` primero
+  y no se veía consistente (el usuario confirmó que no le aparecía). Si se agregan más
+  tiles calculados, seguir este mismo patrón (`data-tooltip="fórmula"` en el `.bignum-tile`).
 - Spend chart: **es un solo chart combinado bar+line con doble eje** (`chart-spend`,
   `yAxisID: 'y'/'y1'`, `lineOnTopPlugin` para que la línea quede siempre visualmente
   arriba de las barras) -- se intentó partir en dos charts de un solo eje (mejor práctica
@@ -371,10 +379,8 @@ with origin/main"). Si el usuario vuelve con más pedidos, el flujo es:
 Pendiente opcional (no pedido, solo sugerido si surge la oportunidad):
 - Si el volumen de datos sigue creciendo mucho (Meta_Raw ya tiene ~9,500 filas), vigilar
   que Google Sheets no se ponga lento — no es un problema todavía.
-- Qualified MQL / Cost per Qualified MQL hoy solo están en Big Numbers -- si el usuario
-  los quiere también en la tabla Creative Performance o como métrica del scatter, es
-  agregar `mqlQualified`/`cpqmql` a `aggregateByAd()`, la tabla, y `METRIC_OPTIONS`
-  (mismo patrón que `mqlYes`/`mqlNo`/`cpsch`).
+- (RESUELTO) Qualified MQL / Cost per Qualified MQL: ya están en Big Numbers, la tabla
+  Creative Performance, y el scatter (`METRIC_OPTIONS`) -- no queda nada pendiente acá.
 - `Frequency` sigue siendo un estimado sesgado a la baja (ver §6) en todos lados donde
   aparece fuera de Big Numbers (de donde ya se sacó) -- selector de métricas del chart,
   tabla de Creative Performance, ejes del scatter. El usuario fue avisado, no pidió sacarlo
