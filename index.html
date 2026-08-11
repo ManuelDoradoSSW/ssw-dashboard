@@ -694,9 +694,11 @@ async function loadAll() {
     const adCandidates = splitMultiValue(cellStr(r.c[4]));
     const mqlRaw = cellStr(r.c[5]).trim().toUpperCase();
     const mql = mqlRaw === 'YES' ? 'yes' : mqlRaw === 'NO' ? 'no' : 'blank';
-    // Lead Score (columna G) -- "Quality"/"High Quality"/similar = qualified; vacío o "Low Quality" no cuenta
+    // Lead Score (columna G) -- opciones reales son "A: High Quality" / "B: Quality" / "C: Low Quality".
+    // Lista explícita de qué cuenta como qualified (A o B), pedido puntual del usuario en vez del
+    // filtro negativo anterior ("no vacío y no contiene LOW") -- más robusto a futuras opciones nuevas.
     const leadScoreRaw = cellStr(r.c[6]).trim().toUpperCase();
-    const qualified = leadScoreRaw !== '' && !leadScoreRaw.includes('LOW');
+    const qualified = leadScoreRaw.startsWith('A:') || leadScoreRaw.startsWith('B:');
     const ads = adCandidates.length ? adCandidates : ['(unattributed)'];
     return ads.map((rawAd, i) => ({
       date, account, campaign,
