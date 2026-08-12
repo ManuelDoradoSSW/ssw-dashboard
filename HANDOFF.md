@@ -133,6 +133,17 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
 
 - **Grano de datos unificado**: Date × Account × Campaign × Ad Set × Ad. `Meta_Raw` es la
   tabla ancla; `PostHog_Raw` e `iClosed_Raw` se cruzan por Date+Ad.
+- **Dos fuentes distintas para Real MQL/Spam/Qualified MQL, a propósito, NO es duplicación
+  de código a limpiar**: `UNIFIED`/`icRows` (explotado por ad, un contacto multi-touch genera
+  varias filas) alimenta **Creative Performance / scatter / `aggregateByAd()`**, donde cada
+  ad tiene que recibir crédito. `ICLOSED_CONTACTS` (deduplicado por `icRowId`, un elemento
+  por contacto real) alimenta **Big Numbers / Funnel / métricas de MQL del Spend chart**,
+  donde lo que importa es "cuántos contactos reales hay", no "cuántas combinaciones
+  contacto×ad hay". Sumar `UNIFIED` directo para un total de cuenta duplica cualquier
+  contacto multi-touch (bug real, reportado y arreglado 2026-08-08 -- ver §6). Si se agrega
+  una métrica nueva de Real MQL/Spam/Qualified MQL en cualquier lado, primero preguntarse:
+  ¿es un total de cuenta (usar `ICLOSED_CONTACTS`/`sumIClosedContacts`) o es por-ad (usar
+  `UNIFIED`/`aggregateByAd`)?
 - **Join key = Ad Name (texto)**, no ID. Se aceptó ese riesgo explícitamente (ver §6 para
   el manejo de encoding).
 - **"Schedules" = Real MQL de iClosed (Yes), no evento de Meta.** Meta trae el dato via
@@ -253,6 +264,14 @@ la automatización en curso -- ver §7).
 
 ## 6. Problemas conocidos / bugs abiertos
 
+- **Real MQL/Spam/Qualified MQL duplicaban contactos multi-touch** (RESUELTO 2026-08-08):
+  el usuario reportó 37 Real + 35 Spam (72 total) en Big Numbers para un rango donde la
+  Sheet tenía 61 filas reales. Causa: esos números salían de sumar `UNIFIED` (explotado por
+  ad para atribución), así que un contacto que tocó 2 ads contaba 2 veces. Se agregó
+  `ICLOSED_CONTACTS` (deduplicado, ver decisión en §4) y se migraron Big Numbers/Funnel/
+  Spend chart a usarlo -- verificado en vivo con el rango exacto del reporte: ahora da
+  28+29+4(blank)=61, matchea la Sheet. Creative Performance/scatter siguen mostrando 37/35
+  a propósito (por-ad, no por-contacto), no es un bug si se ven distintos a Big Numbers.
 - **Cobertura de PostHog** (RESUELTO 2026-08-07): antes solo ~17% de los ads tenían alguna
   fila en PostHog_Raw porque nunca se había corrido un backfill (solo existía la ventana
   rolling de 10 días de `syncPostHog`). Se agregó `backfillPostHog()` a Code.gs (mismo
