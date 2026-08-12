@@ -588,6 +588,7 @@ const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'reach', 'frequency', 'bounceR
 let UNIFIED = []; // flat rows at Date x Account x Campaign x AdSet x Ad grain
 let charts = {};
 let postHogStartDate = null; // primera fecha con sesiones de PostHog reales (ver caveat en Creative Performance)
+let ICLOSED_CONTACTS = []; // un elemento por contacto real de iClosed_Raw (deduplicado, no explotado por ad)
 
 // ===================== THEME =====================
 // Checkbox "Dark mode" en los filtros pisa la preferencia del sistema (prefers-color-scheme)
@@ -686,7 +687,7 @@ async function loadAll() {
   const campaignToAccount = new Map();
   metaRows.forEach(r => { if (!campaignToAccount.has(r.campaign)) campaignToAccount.set(r.campaign, r.account); });
 
-  const icRows = dataRows(icTable).flatMap(r => {
+  const icRows = dataRows(icTable).flatMap((r, icRowId) => {
     const date = cellDate(r.c[0]);
     const campaign = resolveByCrosscheck(cellStr(r.c[2]), campaignCrosscheck);
     const account = cellStr(r.c[1]) || campaignToAccount.get(campaign) || '';
@@ -700,13 +701,29 @@ async function loadAll() {
     const leadScoreRaw = cellStr(r.c[6]).trim().toUpperCase();
     const qualified = leadScoreRaw.startsWith('A:') || leadScoreRaw.startsWith('B:');
     const ads = adCandidates.length ? adCandidates : ['(unattributed)'];
+    // icRowId identifica la fila ORIGINAL de iClosed_Raw (antes de explotar por ad) -- un contacto
+    // multi-touch genera varias filas acá (una por ad tocado) para que cada ad reciba su crédito en
+    // la tabla de Creative Performance, pero sigue siendo UN solo contacto. Sin este id no hay forma
+    // de distinguir "2 contactos distintos" de "1 contacto que tocó 2 ads" más adelante.
     return ads.map((rawAd, i) => ({
       date, account, campaign,
       adset: decodePlusEncoded(adsetCandidates[i] || adsetCandidates[0] || ''),
       ad: resolveAdName(rawAd, date, adsByDate),
-      mql, qualified
+      mql, qualified, icRowId
     }));
   });
+
+  // Vista deduplicada por contacto (no por ad) -- Big Numbers/Funnel/chart necesitan "cuántos
+  // contactos reales hay", no "cuántas combinaciones contacto×ad hay" (eso es lo que agrega
+  // sumar directamente sobre icRows/UNIFIED, y duplica a cualquier contacto multi-touch).
+  const contactMap = new Map();
+  icRows.forEach(r => {
+    if (!contactMap.has(r.icRowId)) {
+      contactMap.set(r.icRowId, { date: r.date, mql: r.mql, qualified: r.qualified, touches: [] });
+    }
+    contactMap.get(r.icRowId).touches.push({ account: r.account, campaign: r.campaign, adset: r.adset });
+  });
+  ICLOSED_CONTACTS = Array.from(contactMap.values());
 
   UNIFIED = mergeSources(metaRows, phRows, icRows);
 }
@@ -889,6 +906,50 @@ function getFilteredRows() {
   return getFilteredRowsForRange(filterState.dateFrom, filterState.dateTo);
 }
 
+// Un contacto multi-touch tocó más de un ad -- cuenta si ALGUNO de sus touches matchea los
+// filtros activos de Account/Campaign/Ad Set (no se puede exigir que todos matcheen, ese
+// contacto no pertenece a un solo ad/campaign de forma exclusiva).
+function getFilteredIClosedContactsForRange(dateFrom, dateTo) {
+  const hasEntityFilter = filterState.account.size || filterState.campaign.size || filterState.adset.size;
+  return ICLOSED_CONTACTS.filter(c => {
+    if (dateFrom && c.date < dateFrom) return false;
+    if (dateTo && c.date > dateTo) return false;
+    if (!hasEntityFilter) return true;
+    return c.touches.some(t =>
+      (!filterState.account.size || filterState.account.has(t.account)) &&
+      (!filterState.campaign.size || filterState.campaign.has(t.campaign)) &&
+      (!filterState.adset.size || filterState.adset.has(t.adset))
+    );
+  });
+}
+
+function getFilteredIClosedContacts() {
+  return getFilteredIClosedContactsForRange(filterState.dateFrom, filterState.dateTo);
+}
+
+function sumIClosedContacts(contacts) {
+  const s = { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0 };
+  contacts.forEach(c => {
+    if (c.mql === 'yes') s.mqlYes++; else if (c.mql === 'no') s.mqlNo++; else s.mqlBlank++;
+    if (c.qualified) s.mqlQualified++;
+  });
+  return s;
+}
+
+// mismo bucketing (día o semana) que renderSpendChart, pero contando contactos únicos en vez
+// de sumar filas ya explotadas por ad -- para que el chart no duplique multi-touch tampoco.
+function bucketIClosedContacts(contacts) {
+  const buckets = new Map();
+  contacts.forEach(c => {
+    const key = granularity === 'weekly' ? isoWeekStart(c.date) : c.date;
+    const prev = buckets.get(key) || { mqlYes: 0, mqlNo: 0, mqlQualified: 0 };
+    if (c.mql === 'yes') prev.mqlYes++; else if (c.mql === 'no') prev.mqlNo++;
+    if (c.qualified) prev.mqlQualified++;
+    buckets.set(key, prev);
+  });
+  return buckets;
+}
+
 // mismo largo de días, inmediatamente antes del rango actual
 function getPreviousRange(dateFrom, dateTo) {
   const start = new Date(dateFrom + 'T00:00:00Z');
@@ -984,18 +1045,22 @@ function aggregateByAd(rows) {
 
 function renderBigNumbers(rows) {
   const s = sumRows(rows);
+  // Real MQL/Spam/Qualified MQL vienen de contactos deduplicados, NO de sumar `rows` (esas
+  // están explotadas por ad -- un contacto multi-touch ahí cuenta 2+ veces, uno por cada ad
+  // que tocó). Spend/Impressions/etc siguen viniendo de Meta_Raw vía `rows`, sin cambios.
+  const ic = sumIClosedContacts(getFilteredIClosedContacts());
   document.getElementById('bn-spend').textContent = fmtMoney(s.spend);
   document.getElementById('bn-clicks').textContent = fmtInt(s.clicks);
   document.getElementById('bn-cpm').textContent = fmtMoney(safeDiv(s.spend, s.impressions) * 1000);
   document.getElementById('bn-ctr').textContent = fmtPct(safeDiv(s.clicks, s.impressions));
   document.getElementById('bn-cp1kreach').textContent = fmtMoney(safeDiv(s.spend, s.reach) * 1000);
   document.getElementById('bn-frequency').textContent = fmtDec(safeDiv(s.impressions, s.reach));
-  document.getElementById('bn-funnelcvr').textContent = fmtPct(safeDiv(s.mqlYes, s.lpViews));
-  document.getElementById('bn-real-mql').textContent = fmtInt(s.mqlYes);
-  document.getElementById('bn-spam').textContent = fmtInt(s.mqlNo);
-  document.getElementById('bn-cpsch').textContent = fmtMoney(safeDiv(s.spend, s.mqlYes));
-  document.getElementById('bn-qualified-mql').textContent = fmtInt(s.mqlQualified);
-  document.getElementById('bn-cpqmql').textContent = fmtMoney(safeDiv(s.spend, s.mqlQualified));
+  document.getElementById('bn-funnelcvr').textContent = fmtPct(safeDiv(ic.mqlYes, s.lpViews));
+  document.getElementById('bn-real-mql').textContent = fmtInt(ic.mqlYes);
+  document.getElementById('bn-spam').textContent = fmtInt(ic.mqlNo);
+  document.getElementById('bn-cpsch').textContent = fmtMoney(safeDiv(s.spend, ic.mqlYes));
+  document.getElementById('bn-qualified-mql').textContent = fmtInt(ic.mqlQualified);
+  document.getElementById('bn-cpqmql').textContent = fmtMoney(safeDiv(s.spend, ic.mqlQualified));
 
   const compareEl = document.getElementById('compare-range-label');
   const deltaKeys = ['spend', 'clicks', 'cpm', 'ctr', 'cp1kreach', 'frequency', 'funnelcvr', 'real-mql', 'spam', 'cpsch', 'qualified-mql', 'cpqmql'];
@@ -1027,6 +1092,7 @@ function renderBigNumbers(rows) {
     prevTo = prevRange.prevTo;
   }
   const p = sumRows(getFilteredRowsForRange(prevFrom, prevTo));
+  const pIc = sumIClosedContacts(getFilteredIClosedContactsForRange(prevFrom, prevTo));
   const curCpm = safeDiv(s.spend, s.impressions) * 1000;
   const prevCpm = safeDiv(p.spend, p.impressions) * 1000;
   const curCtr = safeDiv(s.clicks, s.impressions);
@@ -1035,12 +1101,12 @@ function renderBigNumbers(rows) {
   const prevCp1kReach = safeDiv(p.spend, p.reach) * 1000;
   const curFreq = safeDiv(s.impressions, s.reach);
   const prevFreq = safeDiv(p.impressions, p.reach);
-  const curFunnelCvr = safeDiv(s.mqlYes, s.lpViews);
-  const prevFunnelCvr = safeDiv(p.mqlYes, p.lpViews);
-  const curCpsch = safeDiv(s.spend, s.mqlYes);
-  const prevCpsch = safeDiv(p.spend, p.mqlYes);
-  const curCpqmql = safeDiv(s.spend, s.mqlQualified);
-  const prevCpqmql = safeDiv(p.spend, p.mqlQualified);
+  const curFunnelCvr = safeDiv(ic.mqlYes, s.lpViews);
+  const prevFunnelCvr = safeDiv(pIc.mqlYes, p.lpViews);
+  const curCpsch = safeDiv(s.spend, ic.mqlYes);
+  const prevCpsch = safeDiv(p.spend, pIc.mqlYes);
+  const curCpqmql = safeDiv(s.spend, ic.mqlQualified);
+  const prevCpqmql = safeDiv(p.spend, pIc.mqlQualified);
 
   setDelta('spend', s.spend, p.spend, 'neutral');
   setDelta('clicks', s.clicks, p.clicks, 'up-good');
@@ -1049,10 +1115,10 @@ function renderBigNumbers(rows) {
   setDelta('cp1kreach', curCp1kReach, prevCp1kReach, 'up-bad');
   setDelta('frequency', curFreq, prevFreq, 'up-good');
   setDelta('funnelcvr', curFunnelCvr, prevFunnelCvr, 'up-good');
-  setDelta('real-mql', s.mqlYes, p.mqlYes, 'up-good');
-  setDelta('spam', s.mqlNo, p.mqlNo, 'up-bad');
+  setDelta('real-mql', ic.mqlYes, pIc.mqlYes, 'up-good');
+  setDelta('spam', ic.mqlNo, pIc.mqlNo, 'up-bad');
   setDelta('cpsch', curCpsch, prevCpsch, 'up-bad');
-  setDelta('qualified-mql', s.mqlQualified, p.mqlQualified, 'up-good');
+  setDelta('qualified-mql', ic.mqlQualified, pIc.mqlQualified, 'up-good');
   setDelta('cpqmql', curCpqmql, prevCpqmql, 'up-bad');
 
   if (compareEl) compareEl.textContent = 'Comparing to ' + prevFrom + ' – ' + prevTo;
@@ -1112,7 +1178,13 @@ function renderSpendChart(rows) {
     const prev = buckets.get(key) || { spend: 0, impressions: 0, clicks: 0, reach: 0, bounced: 0, sessions: 0, mqlYes: 0, mqlNo: 0, mqlQualified: 0 };
     prev.spend += r.spend || 0; prev.impressions += r.impressions || 0; prev.clicks += r.clicks || 0;
     prev.reach += r.reach || 0; prev.bounced += r.bounced || 0; prev.sessions += r.sessions || 0;
-    prev.mqlYes += r.mqlYes || 0; prev.mqlNo += r.mqlNo || 0; prev.mqlQualified += r.mqlQualified || 0;
+    buckets.set(key, prev);
+  });
+  // mqlYes/mqlNo/mqlQualified se pisan con el conteo deduplicado por contacto (ver
+  // bucketIClosedContacts) -- sumar directo de `rows` cuenta doble a los multi-touch.
+  bucketIClosedContacts(getFilteredIClosedContacts()).forEach((icBucket, key) => {
+    const prev = buckets.get(key) || { spend: 0, impressions: 0, clicks: 0, reach: 0, bounced: 0, sessions: 0 };
+    prev.mqlYes = icBucket.mqlYes; prev.mqlNo = icBucket.mqlNo; prev.mqlQualified = icBucket.mqlQualified;
     buckets.set(key, prev);
   });
   const labels = Array.from(buckets.keys()).sort();
@@ -1363,12 +1435,15 @@ function highlightAndScrollToAd(adName) {
 
 function renderFunnel(rows) {
   const s = sumRows(rows);
+  // Registrations/Real MQL cuentan contactos deduplicados, no filas explotadas por ad --
+  // mismo motivo que en renderBigNumbers.
+  const ic = sumIClosedContacts(getFilteredIClosedContacts());
   const stages = [
     { label: 'Impressions', value: s.impressions, color: 'var(--funnel-1)' },
     { label: 'Clicks', value: s.clicks, color: 'var(--funnel-2)' },
     { label: 'LP Views', value: s.lpViews, color: 'var(--funnel-3)' },
-    { label: 'Registrations (all MQLs)', value: s.mqlYes + s.mqlNo + s.mqlBlank, color: 'var(--funnel-4)' },
-    { label: 'Real MQL', value: s.mqlYes, color: 'var(--funnel-5)' }
+    { label: 'Registrations (all MQLs)', value: ic.mqlYes + ic.mqlNo + ic.mqlBlank, color: 'var(--funnel-4)' },
+    { label: 'Real MQL', value: ic.mqlYes, color: 'var(--funnel-5)' }
   ];
   const max = stages[0].value || 1;
   const body = document.getElementById('funnel-body');
