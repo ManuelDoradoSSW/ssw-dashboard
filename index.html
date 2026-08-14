@@ -168,7 +168,15 @@
   .msel.open .msel-panel { display: block; }
   .msel-actions { display: flex; gap: 8px; padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid var(--gridline); }
   .msel-actions a { font-size: 12px; color: var(--series-1); cursor: pointer; text-decoration: none; }
+  .msel-search {
+    width: 100%; box-sizing: border-box; display: block;
+    font-family: inherit; font-size: 12.5px;
+    background: var(--surface-1); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 8px; margin-bottom: 6px;
+  }
   .msel-item { display: flex; align-items: center; gap: 8px; padding: 4px 2px; font-size: 13px; }
+  .msel-empty { padding: 8px 2px; font-size: 12.5px; color: var(--text-muted); }
   .scatter-filter-row { display: grid; grid-template-columns: 90px 1fr 80px; gap: 6px; align-items: center; padding: 6px 2px; }
   .scatter-filter-row label { font-size: 12px; color: var(--text-secondary); font-weight: 700; }
   .scatter-filter-row select, .scatter-filter-row input { font-size: 12.5px; padding: 4px 6px; }
@@ -846,17 +854,37 @@ function buildMultiSelect(containerId, label, options, stateSet, onChange) {
   actions.className = 'msel-actions';
   const selAll = document.createElement('a'); selAll.textContent = 'All';
   const clearAll = document.createElement('a'); clearAll.textContent = 'Clear';
+  // "All"/"Clear" siempre operan sobre TODAS las opciones, no solo las que matchean la
+  // búsqueda actual -- si no, "Clear" con un filtro de búsqueda activo dejaría seleccionadas
+  // las opciones ocultas por el buscador, algo muy confuso.
   selAll.onclick = () => { stateSet.clear(); options.forEach(o => stateSet.add(o)); renderBtn(); renderItems(); onChange(); };
   clearAll.onclick = () => { stateSet.clear(); renderBtn(); renderItems(); onChange(); };
   actions.appendChild(selAll); actions.appendChild(clearAll);
   panel.appendChild(actions);
+
+  let searchText = '';
+  const searchInput = document.createElement('input');
+  searchInput.type = 'text';
+  searchInput.className = 'msel-search';
+  searchInput.placeholder = 'Search ' + label.toLowerCase() + '…';
+  searchInput.addEventListener('click', (e) => e.stopPropagation());
+  searchInput.addEventListener('input', () => { searchText = searchInput.value.trim().toLowerCase(); renderItems(); });
+  panel.appendChild(searchInput);
 
   const itemsWrap = document.createElement('div');
   panel.appendChild(itemsWrap);
 
   function renderItems() {
     itemsWrap.innerHTML = '';
-    options.forEach(opt => {
+    const visible = searchText ? options.filter(o => o.toLowerCase().includes(searchText)) : options;
+    if (!visible.length) {
+      const empty = document.createElement('div');
+      empty.className = 'msel-empty';
+      empty.textContent = 'No matches';
+      itemsWrap.appendChild(empty);
+      return;
+    }
+    visible.forEach(opt => {
       const row = document.createElement('label');
       row.className = 'msel-item';
       const cb = document.createElement('input');
@@ -872,7 +900,15 @@ function buildMultiSelect(containerId, label, options, stateSet, onChange) {
     });
   }
 
-  btn.onclick = (e) => { e.stopPropagation(); el.classList.toggle('open'); };
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    const opening = !el.classList.contains('open');
+    el.classList.toggle('open');
+    if (opening) {
+      searchText = ''; searchInput.value = ''; renderItems();
+      setTimeout(() => searchInput.focus(), 0);
+    }
+  };
   document.addEventListener('click', (e) => { if (!el.contains(e.target)) el.classList.remove('open'); });
 
   el.appendChild(btn); el.appendChild(panel);
