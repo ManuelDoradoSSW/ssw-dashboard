@@ -144,6 +144,15 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
   una métrica nueva de Real MQL/Spam/Qualified MQL en cualquier lado, primero preguntarse:
   ¿es un total de cuenta (usar `ICLOSED_CONTACTS`/`sumIClosedContacts`) o es por-ad (usar
   `UNIFIED`/`aggregateByAd`)?
+- **`ICLOSED_CONTACTS.touches[].account/campaign/adset` se resuelven contra `Meta_Raw` por
+  `date+ad`, NO contra el `account`/`campaign` ya calculado en `icRows`** (bug relacionado,
+  arreglado el mismo día): la columna Campaign cruda de iClosed viene con varios valores
+  separados por coma en filas multi-touch, y el crosscheck no la separa (a diferencia de Ad/
+  Ad Set, que sí se parten) -- eso dejaba el account/campaign de ESE contacto vacío o
+  garabateado, y lo excluía silenciosamente de Big Numbers cuando había un filtro de
+  Campaign/Account activo, aunque sus ads sí pertenecieran a ese filtro. Reportado por el
+  usuario como "Big Numbers da 4, Creative Performance da 6" filtrando por la campaña
+  SEARCHSYNC en agosto -- confirmado y arreglado en vivo (ver commit `02f6ad4`).
 - **Join key = Ad Name (texto)**, no ID. Se aceptó ese riesgo explícitamente (ver §6 para
   el manejo de encoding).
 - **"Schedules" = Real MQL de iClosed (Yes), no evento de Meta.** Meta trae el dato via
