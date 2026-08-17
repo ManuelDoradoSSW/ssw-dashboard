@@ -724,12 +724,28 @@ async function loadAll() {
   // Vista deduplicada por contacto (no por ad) -- Big Numbers/Funnel/chart necesitan "cuántos
   // contactos reales hay", no "cuántas combinaciones contacto×ad hay" (eso es lo que agrega
   // sumar directamente sobre icRows/UNIFIED, y duplica a cualquier contacto multi-touch).
+  //
+  // Para el Account/Campaign/Ad Set de cada touch, hay que usar el de Meta_Raw (vía date+ad),
+  // NO el `account`/`campaign` ya resuelto en icRows -- ese sale de la columna Campaign cruda
+  // de iClosed, que en filas multi-touch viene con varios valores separados por coma (ej. "Camp
+  // A, Camp B") y el crosscheck no la separa, así que account/campaign quedan vacíos o mal para
+  // ESE contacto entero. El Ad sí se resuelve bien individualmente (ahí sí se hace split), así
+  // que buscar el Account/Campaign real de Meta por date+ad es más confiable que reusar lo que
+  // vino de la columna Campaign de iClosed. Mismo criterio que ya usa mergeSources() para UNIFIED.
+  const metaKeyMap = new Map();
+  metaRows.forEach(r => { metaKeyMap.set(r.date + '' + r.ad, { account: r.account, campaign: r.campaign, adset: r.adset }); });
+
   const contactMap = new Map();
   icRows.forEach(r => {
     if (!contactMap.has(r.icRowId)) {
       contactMap.set(r.icRowId, { date: r.date, mql: r.mql, qualified: r.qualified, touches: [] });
     }
-    contactMap.get(r.icRowId).touches.push({ account: r.account, campaign: r.campaign, adset: r.adset });
+    const metaInfo = metaKeyMap.get(r.date + '' + r.ad);
+    contactMap.get(r.icRowId).touches.push({
+      account: metaInfo ? metaInfo.account : r.account,
+      campaign: metaInfo ? metaInfo.campaign : r.campaign,
+      adset: metaInfo ? metaInfo.adset : r.adset
+    });
   });
   ICLOSED_CONTACTS = Array.from(contactMap.values());
 
