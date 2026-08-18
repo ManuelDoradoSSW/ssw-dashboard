@@ -1,6 +1,6 @@
 # HANDOFF — SSW Account Dashboard (Meta Ads)
 
-Last updated: 2026-08-07. Written for a fresh Claude session to pick this up with zero prior context.
+Last updated: 2026-08-08. Written for a fresh Claude session to pick this up with zero prior context.
 
 ## 1. Objetivo
 
@@ -44,7 +44,11 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
   queda fija arriba al scrollear). Rango de fechas por **presets** (`#f-date-preset`):
   Last 7 days / Last 30 days / This Month / Last Month / Year to date / Custom (los
   date pickers "From"/"To" solo se muestran con Custom). Account/Campaign/Ad Set
-  (multi-select con checkboxes, cascada entre sí).
+  (multi-select con checkboxes, cascada entre sí). Cada multi-select tiene un **buscador**
+  (`buildMultiSelect()`, campo `.msel-search`) que filtra la lista en vivo mientras se
+  escribe -- se agregó porque Campaign/Ad Set pueden tener muchas opciones y scrollear se
+  hacía incómodo. Se enfoca solo al abrir el dropdown y se resetea al reabrir; "All"/"Clear"
+  siempre operan sobre la lista completa, no sobre lo que está filtrado por el buscador.
 - Comparación de períodos: checkbox "Compare" + modo "Previous period" o "Custom range"
   (con 2 date pickers propios). Deltas por tile con color según si subir es bueno o malo.
 - **Dark mode manual**: checkbox "Dark mode" en los filtros pisa `prefers-color-scheme`
