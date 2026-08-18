@@ -192,7 +192,9 @@
   .bignum-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
   /* cada tile en su propia "burbuja" recesada -- surface-2 sobre el surface-1 de la card,
      con el borde temático ya existente, así funciona en light y dark sin colores nuevos */
-  .bignum-tile { padding: 14px 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; }
+  .bignum-tile { padding: 14px 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+  /* hover: la burbuja se tiñe de violeta (mismo --highlight-bg del resaltado de filas) y levanta */
+  .bignum-tile:hover { background: var(--highlight-bg); border-color: var(--series-1); box-shadow: 0 4px 14px rgba(0,0,0,0.10); }
   /* tooltip propio en vez de confiar en el title nativo del navegador -- ese no se ve
      consistente entre navegadores/SO, esto sí se ve siempre igual */
   .bignum-tile[data-tooltip] { position: relative; cursor: help; }
