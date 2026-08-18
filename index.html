@@ -235,19 +235,28 @@
   th, td { text-align: right; padding: 8px 10px; font-size: 12.5px; width: 108px; overflow: hidden; text-overflow: ellipsis; }
   td { white-space: nowrap; }
   th { white-space: normal; line-height: 1.25; }
-  th:nth-child(2), td:nth-child(2) {
+  #creative-table th:nth-child(2), #creative-table td:nth-child(2) {
     text-align: left; white-space: normal; width: 220px;
     overflow-wrap: break-word;
     position: sticky; left: 64px; z-index: 2; background: var(--surface-1);
   }
-  th:first-child, td:first-child {
+  #creative-table th:first-child, #creative-table td:first-child {
     position: sticky; left: 0; z-index: 2; background: var(--surface-1);
     width: 64px;
   }
-  th:first-child, th:nth-child(2) { z-index: 3; }
+  #creative-table th:first-child, #creative-table th:nth-child(2) { z-index: 3; }
   th { color: var(--text-muted); font-weight: 700; border-bottom: 1px solid var(--baseline); cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--surface-1); }
-  th:first-child { cursor: default; }
+  #creative-table th:first-child { cursor: default; }
   th:hover { color: var(--text-primary); }
+
+  /* ---- performance-per table: primera columna (nombre de la entidad) sticky + ancha,
+     sin la columna de thumbnail que sí tiene creative-table ---- */
+  #perf-table th:first-child, #perf-table td:first-child {
+    text-align: left; white-space: normal; width: 240px;
+    overflow-wrap: break-word;
+    position: sticky; left: 0; z-index: 2; background: var(--surface-1);
+  }
+  #perf-table th:first-child { z-index: 3; }
   th.sorted::after { content: ' ▾'; }
   td { border-bottom: 1px solid var(--gridline); color: var(--text-secondary); font-weight: 700; }
   .creative-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; display: block; }
@@ -461,6 +470,41 @@
     </h2>
     <p class="chart-legend-label" id="spend-chart-legend"></p>
     <div class="chart-wrap" style="height:320px;"><canvas id="chart-spend"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2 class="chart-title-row" style="margin-bottom:12px;">
+      <span>Performance per</span>
+      <select id="perf-dim" class="inline-metric-select">
+        <option value="account">Account</option>
+        <option value="campaign">Campaign</option>
+        <option value="adset">Ad Set</option>
+      </select>
+    </h2>
+    <p class="caveat" style="margin:0 0 12px;">Each row is that entity with the current filters applied. A multi-touch iClosed contact (one that touched more than one entity) is counted once per entity it touched, so Real MQL / Spam / Qualified can add up to more than Big Numbers across rows — same logic as Creative Performance. "(unattributed)" groups iClosed contacts whose ad doesn't match Meta_Raw (no spend to attribute).</p>
+    <div class="table-scroll">
+      <table id="perf-table">
+        <thead>
+          <tr>
+            <th data-key="name" id="perf-th-name">Account</th>
+            <th data-key="spend">Spend</th>
+            <th data-key="clicks">Clicks</th>
+            <th data-key="cpm">CPM</th>
+            <th data-key="ctr">CTR</th>
+            <th data-key="cp1kreach">Cost / 1000 Meta Accounts (est.)</th>
+            <th data-key="frequency">Frequency (est.)</th>
+            <th data-key="funnelcvr">Funnel Conversion Rate</th>
+            <th data-key="mqlYes">Real MQLs</th>
+            <th data-key="mqlNo">Spam</th>
+            <th data-key="cpsch">Cost / Real MQL</th>
+            <th data-key="mqlQualified">Qualified MQLs</th>
+            <th data-key="cpqmql">Cost / Qualified MQL</th>
+          </tr>
+        </thead>
+        <tbody id="perf-table-body"></tbody>
+      </table>
+    </div>
+    <p class="table-meta" id="perf-table-meta"></p>
   </div>
 
   <div class="card">
@@ -1512,12 +1556,121 @@ function renderFunnel(rows) {
   }).join('');
 }
 
+// ===================== RENDER: PERFORMANCE PER =====================
+
+let perfDim = 'account';
+let perfSortKey = 'spend', perfSortDir = -1;
+const PERF_DIM_LABELS = { account: 'Account', campaign: 'Campaign', adset: 'Ad Set' };
+// mismo orden que el <thead> de #perf-table -- cada fila desglosa los 12 Big Numbers
+const PERF_COLUMNS = [
+  { key: 'spend', fmt: 'money' },
+  { key: 'clicks', fmt: 'int' },
+  { key: 'cpm', fmt: 'money' },
+  { key: 'ctr', fmt: 'pct' },
+  { key: 'cp1kreach', fmt: 'money' },
+  { key: 'frequency', fmt: 'dec' },
+  { key: 'funnelcvr', fmt: 'pct' },
+  { key: 'mqlYes', fmt: 'int' },
+  { key: 'mqlNo', fmt: 'int' },
+  { key: 'cpsch', fmt: 'money' },
+  { key: 'mqlQualified', fmt: 'int' },
+  { key: 'cpqmql', fmt: 'money' }
+];
+
+// Desglose de los Big Numbers por Account/Campaign/Ad Set. Las métricas de Meta (spend,
+// impressions, etc.) se suman de UNIFIED filtrado; las de iClosed (Real MQL/Spam/Qualified)
+// cuentan CONTACTOS deduplicados, no filas explotadas por ad. Un contacto multi-touch se
+// cuenta una vez por CADA entidad que tocó (equivalente a filtrar la barra de arriba por esa
+// entidad), por eso las filas pueden sumar más que Big Numbers -- mismo criterio que Creative
+// Performance. El Set de valores evita contarlo dos veces si tocó la misma entidad más de una vez.
+function computePerfRows() {
+  const groups = new Map();
+  const ensure = (v) => {
+    const key = v || '(unattributed)';
+    if (!groups.has(key)) groups.set(key, { name: key, spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0 });
+    return groups.get(key);
+  };
+
+  getFilteredRows().forEach(r => {
+    if (!(r.spend || r.impressions || r.clicks || r.reach || r.lpViews)) return;
+    const g = ensure(r[perfDim]);
+    g.spend += r.spend || 0; g.impressions += r.impressions || 0; g.clicks += r.clicks || 0;
+    g.reach += r.reach || 0; g.lpViews += r.lpViews || 0;
+  });
+
+  getFilteredIClosedContacts().forEach(c => {
+    const vals = new Set();
+    c.touches.forEach(t => {
+      if (filterState.account.size && !filterState.account.has(t.account)) return;
+      if (filterState.campaign.size && !filterState.campaign.has(t.campaign)) return;
+      if (filterState.adset.size && !filterState.adset.has(t.adset)) return;
+      vals.add(t[perfDim] || '(unattributed)');
+    });
+    vals.forEach(v => {
+      const g = ensure(v);
+      if (c.mql === 'yes') g.mqlYes++; else if (c.mql === 'no') g.mqlNo++; else g.mqlBlank++;
+      if (c.qualified) g.mqlQualified++;
+    });
+  });
+
+  return Array.from(groups.values())
+    .filter(g => g.spend || g.impressions || g.clicks || g.mqlYes || g.mqlNo || g.mqlBlank || g.mqlQualified)
+    .map(g => Object.assign(g, {
+      cpm: safeDiv(g.spend, g.impressions) * 1000,
+      ctr: safeDiv(g.clicks, g.impressions),
+      cp1kreach: safeDiv(g.spend, g.reach) * 1000,
+      frequency: safeDiv(g.impressions, g.reach),
+      funnelcvr: safeDiv(g.mqlYes, g.lpViews),
+      cpsch: safeDiv(g.spend, g.mqlYes),
+      cpqmql: safeDiv(g.spend, g.mqlQualified)
+    }));
+}
+
+function renderPerfTable() {
+  const data = computePerfRows();
+  data.sort((a, b) => {
+    if (perfSortKey === 'name') return a.name.localeCompare(b.name) * perfSortDir * -1;
+    return ((a[perfSortKey] || 0) - (b[perfSortKey] || 0)) * perfSortDir;
+  });
+
+  document.getElementById('perf-th-name').textContent = PERF_DIM_LABELS[perfDim];
+  const tbody = document.getElementById('perf-table-body');
+  tbody.innerHTML = data.map(r =>
+    '<tr><td title="' + escapeHtml(r.name) + '">' + escapeHtml(r.name) + '</td>' +
+    PERF_COLUMNS.map(c => '<td>' + fmtByType(r[c.key], c.fmt) + '</td>').join('') +
+    '</tr>'
+  ).join('');
+
+  document.querySelectorAll('#perf-table th').forEach(th => {
+    th.classList.toggle('sorted', th.dataset.key === perfSortKey);
+  });
+  const noun = perfDim === 'account' ? 'accounts' : perfDim === 'campaign' ? 'campaigns' : 'ad sets';
+  document.getElementById('perf-table-meta').textContent = data.length + ' ' + noun;
+}
+
+function setupPerfTable() {
+  document.getElementById('perf-dim').addEventListener('change', (e) => {
+    perfDim = e.target.value;
+    perfSortKey = 'spend'; perfSortDir = -1;
+    renderPerfTable();
+  });
+  document.querySelectorAll('#perf-table th[data-key]').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.key;
+      if (perfSortKey === key) perfSortDir *= -1;
+      else { perfSortKey = key; perfSortDir = (key === 'name') ? 1 : -1; }
+      renderPerfTable();
+    });
+  });
+}
+
 // ===================== ORCHESTRATION =====================
 
 function renderAll() {
   const rows = getFilteredRows();
   renderBigNumbers(rows);
   renderSpendChart(rows);
+  renderPerfTable();
   renderCreativeTable(rows);
   renderScatter(rows);
   renderFunnel(rows);
@@ -1628,6 +1781,7 @@ async function init() {
     refreshFilterOptions();
     populateScatterSelects();
     populateSpendMetricSelects();
+    setupPerfTable();
     document.getElementById('posthog-start-caveat').textContent = postHogStartDate
       ? 'Bounce Rate (PostHog) available from ' + fmtDateLong(postHogStartDate)
       : '';
