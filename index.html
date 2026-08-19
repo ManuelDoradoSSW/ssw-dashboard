@@ -458,6 +458,16 @@
           <div class="bignum-value" id="bn-cpqmql">–</div>
           <div class="bignum-delta" id="bn-cpqmql-delta"></div>
         </div>
+        <div class="bignum-tile" data-tooltip="Real MQL + Discovery Call Booked + Call A only (not B)">
+          <div class="bignum-label">Bookings</div>
+          <div class="bignum-value" id="bn-booked">–</div>
+          <div class="bignum-delta" id="bn-booked-delta"></div>
+        </div>
+        <div class="bignum-tile" data-tooltip="Spend / Bookings">
+          <div class="bignum-label">Cost per Booking</div>
+          <div class="bignum-value" id="bn-cpbooking">–</div>
+          <div class="bignum-delta" id="bn-cpbooking-delta"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -503,6 +513,8 @@
             <th data-key="cpsch">Cost / Real MQL</th>
             <th data-key="mqlQualified">Qualified MQLs</th>
             <th data-key="cpqmql">Cost / Qualified MQL</th>
+            <th data-key="booked">Bookings</th>
+            <th data-key="cpbooking">Cost / Booking</th>
           </tr>
         </thead>
         <tbody id="perf-table-body"></tbody>
@@ -538,6 +550,8 @@
             <th data-key="cpsch">Cost / Real MQL</th>
             <th data-key="mqlQualified">Qualified MQL</th>
             <th data-key="cpqmql">Cost / Qualified MQL</th>
+            <th data-key="booked">Bookings</th>
+            <th data-key="cpbooking">Cost / Booking</th>
             <th data-key="hookRate">Hook Rate</th>
             <th data-key="bounceRate">Bounce Rate (PostHog)</th>
           </tr>
@@ -621,7 +635,9 @@ const METRIC_OPTIONS = [
   { key: 'bounceRate', label: 'Bounce Rate', fmt: 'pct' },
   { key: 'mqlYes', label: 'Real MQL', fmt: 'int' },
   { key: 'mqlNo', label: 'Spam', fmt: 'int' },
-  { key: 'cpsch', label: 'Cost per Real MQL', fmt: 'money' }
+  { key: 'cpsch', label: 'Cost per Real MQL', fmt: 'money' },
+  { key: 'booked', label: 'Bookings', fmt: 'int' },
+  { key: 'cpbooking', label: 'Cost per Booking', fmt: 'money' }
 ];
 
 // para el gráfico de Spend/CPSCH -- compute() trabaja sobre las sumas crudas de un bucket
@@ -637,9 +653,11 @@ const CHART_METRICS = {
   cpsch:      { label: 'Cost per Real MQL', fmt: 'money', compute: s => safeDiv(s.spend, s.mqlYes) },
   mqlNo:      { label: 'Spam', fmt: 'int', compute: s => s.mqlNo },
   mqlQualified: { label: 'Qualified MQLs', fmt: 'int', compute: s => s.mqlQualified },
-  cpqmql:     { label: 'Cost per Qualified MQL', fmt: 'money', compute: s => safeDiv(s.spend, s.mqlQualified) }
+  cpqmql:     { label: 'Cost per Qualified MQL', fmt: 'money', compute: s => safeDiv(s.spend, s.mqlQualified) },
+  booked:     { label: 'Bookings', fmt: 'int', compute: s => s.booked },
+  cpbooking:  { label: 'Cost per Booking', fmt: 'money', compute: s => safeDiv(s.spend, s.booked) }
 };
-const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'reach', 'frequency', 'bounceRate', 'mqlYes', 'cpsch', 'mqlNo', 'mqlQualified', 'cpqmql'];
+const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'reach', 'frequency', 'bounceRate', 'mqlYes', 'cpsch', 'mqlNo', 'mqlQualified', 'cpqmql', 'booked', 'cpbooking'];
 
 let UNIFIED = []; // flat rows at Date x Account x Campaign x AdSet x Ad grain
 let charts = {};
@@ -756,6 +774,14 @@ async function loadAll() {
     // filtro negativo anterior ("no vacío y no contiene LOW") -- más robusto a futuras opciones nuevas.
     const leadScoreRaw = cellStr(r.c[6]).trim().toUpperCase();
     const qualified = leadScoreRaw.startsWith('A:') || leadScoreRaw.startsWith('B:');
+    // Booking (columnas H/I) -- cuenta como Booked si: Real MQL = YES, Scheduling status =
+    // DISCOVERY_CALL_BOOKED, y el Event tiene "Call A" PERO NO "Call B" (si agendó ambas o
+    // solo la B no es booking). Real MQL=YES es redundante en teoría pero se deja como control.
+    const schedStatus = cellStr(r.c[7]).trim().toUpperCase().replace(/[\s_]+/g, ' ');
+    const eventUpper = cellStr(r.c[8]).toUpperCase();
+    const hasCallA = /\bCALL A\b/.test(eventUpper);
+    const hasCallB = /\bCALL B\b/.test(eventUpper);
+    const booked = mql === 'yes' && schedStatus === 'DISCOVERY CALL BOOKED' && hasCallA && !hasCallB;
     const ads = adCandidates.length ? adCandidates : ['(unattributed)'];
     // icRowId identifica la fila ORIGINAL de iClosed_Raw (antes de explotar por ad) -- un contacto
     // multi-touch genera varias filas acá (una por ad tocado) para que cada ad reciba su crédito en
@@ -765,7 +791,7 @@ async function loadAll() {
       date, account, campaign,
       adset: decodePlusEncoded(adsetCandidates[i] || adsetCandidates[0] || ''),
       ad: resolveAdName(rawAd, date, adsByDate),
-      mql, qualified, icRowId
+      mql, qualified, booked, icRowId
     }));
   });
 
@@ -786,7 +812,7 @@ async function loadAll() {
   const contactMap = new Map();
   icRows.forEach(r => {
     if (!contactMap.has(r.icRowId)) {
-      contactMap.set(r.icRowId, { date: r.date, mql: r.mql, qualified: r.qualified, touches: [] });
+      contactMap.set(r.icRowId, { date: r.date, mql: r.mql, qualified: r.qualified, booked: r.booked, touches: [] });
     }
     const metaInfo = metaKeyMap.get(r.date + '' + r.ad);
     contactMap.get(r.icRowId).touches.push({
@@ -855,9 +881,10 @@ function mergeSources(metaRows, phRows, icRows) {
   const icMap = new Map();
   icRows.forEach(r => {
     const key = r.date + '' + r.ad;
-    const prev = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, account: r.account, campaign: r.campaign, adset: r.adset, date: r.date, ad: r.ad };
+    const prev = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, account: r.account, campaign: r.campaign, adset: r.adset, date: r.date, ad: r.ad };
     if (r.mql === 'yes') prev.mqlYes++; else if (r.mql === 'no') prev.mqlNo++; else prev.mqlBlank++;
     if (r.qualified) prev.mqlQualified++;
+    if (r.booked) prev.booked++;
     icMap.set(key, prev);
   });
 
@@ -868,10 +895,10 @@ function mergeSources(metaRows, phRows, icRows) {
     const key = r.date + '' + r.ad;
     seen.add(key);
     const ph = phMap.get(key) || { sessions: 0, bounced: 0 };
-    const ic = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0 };
+    const ic = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0 };
     rows.push(Object.assign({}, r, {
       sessions: ph.sessions, bounced: ph.bounced,
-      mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified
+      mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified, booked: ic.booked
     }));
   });
 
@@ -884,7 +911,7 @@ function mergeSources(metaRows, phRows, icRows) {
     rows.push({
       date: ic.date, account: ic.account, campaign: ic.campaign, adset: ic.adset, ad: ic.ad,
       spend: 0, impressions: 0, clicks: 0, reach: 0, frequency: 0, lpViews: 0, registrations: 0, schedulesMeta: 0, videoViews: 0,
-      sessions: 0, bounced: 0, mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified
+      sessions: 0, bounced: 0, mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified, booked: ic.booked
     });
   });
   if (unmatched > 0) console.warn('iClosed: ' + unmatched + ' rows (Date+Ad) with no match in Meta_Raw -- check ad names.');
@@ -1028,10 +1055,11 @@ function getFilteredIClosedContacts() {
 }
 
 function sumIClosedContacts(contacts) {
-  const s = { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0 };
+  const s = { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0 };
   contacts.forEach(c => {
     if (c.mql === 'yes') s.mqlYes++; else if (c.mql === 'no') s.mqlNo++; else s.mqlBlank++;
     if (c.qualified) s.mqlQualified++;
+    if (c.booked) s.booked++;
   });
   return s;
 }
@@ -1042,9 +1070,10 @@ function bucketIClosedContacts(contacts) {
   const buckets = new Map();
   contacts.forEach(c => {
     const key = granularity === 'weekly' ? isoWeekStart(c.date) : c.date;
-    const prev = buckets.get(key) || { mqlYes: 0, mqlNo: 0, mqlQualified: 0 };
+    const prev = buckets.get(key) || { mqlYes: 0, mqlNo: 0, mqlQualified: 0, booked: 0 };
     if (c.mql === 'yes') prev.mqlYes++; else if (c.mql === 'no') prev.mqlNo++;
     if (c.qualified) prev.mqlQualified++;
+    if (c.booked) prev.booked++;
     buckets.set(key, prev);
   });
   return buckets;
@@ -1114,7 +1143,7 @@ function safeDiv(a, b) { return b > 0 ? a / b : 0; }
 // ===================== AGGREGATION =====================
 
 function sumRows(rows) {
-  const s = { spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, registrations: 0, schedulesMeta: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, videoViews: 0, sessions: 0, bounced: 0 };
+  const s = { spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, registrations: 0, schedulesMeta: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, videoViews: 0, sessions: 0, bounced: 0 };
   rows.forEach(r => { Object.keys(s).forEach(k => s[k] += (r[k] || 0)); });
   return s;
 }
@@ -1136,7 +1165,8 @@ function aggregateByAd(rows) {
       hookRate: safeDiv(s.videoViews, s.impressions),
       bounceRate: safeDiv(s.bounced, s.sessions),
       cpsch: safeDiv(s.spend, s.mqlYes),
-      cpqmql: safeDiv(s.spend, s.mqlQualified)
+      cpqmql: safeDiv(s.spend, s.mqlQualified),
+      cpbooking: safeDiv(s.spend, s.booked)
     });
   });
 }
@@ -1161,9 +1191,11 @@ function renderBigNumbers(rows) {
   document.getElementById('bn-cpsch').textContent = fmtMoney(safeDiv(s.spend, ic.mqlYes));
   document.getElementById('bn-qualified-mql').textContent = fmtInt(ic.mqlQualified);
   document.getElementById('bn-cpqmql').textContent = fmtMoney(safeDiv(s.spend, ic.mqlQualified));
+  document.getElementById('bn-booked').textContent = fmtInt(ic.booked);
+  document.getElementById('bn-cpbooking').textContent = fmtMoney(safeDiv(s.spend, ic.booked));
 
   const compareEl = document.getElementById('compare-range-label');
-  const deltaKeys = ['spend', 'clicks', 'cpm', 'ctr', 'cp1kreach', 'frequency', 'funnelcvr', 'real-mql', 'spam', 'cpsch', 'qualified-mql', 'cpqmql'];
+  const deltaKeys = ['spend', 'clicks', 'cpm', 'ctr', 'cp1kreach', 'frequency', 'funnelcvr', 'real-mql', 'spam', 'cpsch', 'qualified-mql', 'cpqmql', 'booked', 'cpbooking'];
 
   if (!filterState.compare || !filterState.dateFrom || !filterState.dateTo) {
     deltaKeys.forEach(k => {
@@ -1207,6 +1239,8 @@ function renderBigNumbers(rows) {
   const prevCpsch = safeDiv(p.spend, pIc.mqlYes);
   const curCpqmql = safeDiv(s.spend, ic.mqlQualified);
   const prevCpqmql = safeDiv(p.spend, pIc.mqlQualified);
+  const curCpbooking = safeDiv(s.spend, ic.booked);
+  const prevCpbooking = safeDiv(p.spend, pIc.booked);
 
   setDelta('spend', s.spend, p.spend, 'neutral');
   setDelta('clicks', s.clicks, p.clicks, 'up-good');
@@ -1220,6 +1254,8 @@ function renderBigNumbers(rows) {
   setDelta('cpsch', curCpsch, prevCpsch, 'up-bad');
   setDelta('qualified-mql', ic.mqlQualified, pIc.mqlQualified, 'up-good');
   setDelta('cpqmql', curCpqmql, prevCpqmql, 'up-bad');
+  setDelta('booked', ic.booked, pIc.booked, 'up-good');
+  setDelta('cpbooking', curCpbooking, prevCpbooking, 'up-bad');
 
   if (compareEl) compareEl.textContent = 'Comparing to ' + prevFrom + ' – ' + prevTo;
 }
@@ -1275,16 +1311,16 @@ function renderSpendChart(rows) {
   const buckets = new Map();
   rows.forEach(r => {
     const key = granularity === 'weekly' ? isoWeekStart(r.date) : r.date;
-    const prev = buckets.get(key) || { spend: 0, impressions: 0, clicks: 0, reach: 0, bounced: 0, sessions: 0, mqlYes: 0, mqlNo: 0, mqlQualified: 0 };
+    const prev = buckets.get(key) || { spend: 0, impressions: 0, clicks: 0, reach: 0, bounced: 0, sessions: 0, mqlYes: 0, mqlNo: 0, mqlQualified: 0, booked: 0 };
     prev.spend += r.spend || 0; prev.impressions += r.impressions || 0; prev.clicks += r.clicks || 0;
     prev.reach += r.reach || 0; prev.bounced += r.bounced || 0; prev.sessions += r.sessions || 0;
     buckets.set(key, prev);
   });
-  // mqlYes/mqlNo/mqlQualified se pisan con el conteo deduplicado por contacto (ver
+  // mqlYes/mqlNo/mqlQualified/booked se pisan con el conteo deduplicado por contacto (ver
   // bucketIClosedContacts) -- sumar directo de `rows` cuenta doble a los multi-touch.
   bucketIClosedContacts(getFilteredIClosedContacts()).forEach((icBucket, key) => {
     const prev = buckets.get(key) || { spend: 0, impressions: 0, clicks: 0, reach: 0, bounced: 0, sessions: 0 };
-    prev.mqlYes = icBucket.mqlYes; prev.mqlNo = icBucket.mqlNo; prev.mqlQualified = icBucket.mqlQualified;
+    prev.mqlYes = icBucket.mqlYes; prev.mqlNo = icBucket.mqlNo; prev.mqlQualified = icBucket.mqlQualified; prev.booked = icBucket.booked;
     buckets.set(key, prev);
   });
   const labels = Array.from(buckets.keys()).sort();
@@ -1398,6 +1434,8 @@ function renderCreativeTable(rows) {
       <td>${fmtMoney(r.cpsch)}</td>
       <td>${fmtInt(r.mqlQualified)}</td>
       <td>${fmtMoney(r.cpqmql)}</td>
+      <td>${fmtInt(r.booked)}</td>
+      <td>${fmtMoney(r.cpbooking)}</td>
       <td>${fmtPct(r.hookRate)}</td>
       <td>${r.sessions > 0 ? fmtPct(r.bounceRate) : '—'}</td>
     </tr>
@@ -1543,7 +1581,10 @@ function renderFunnel(rows) {
     { label: 'Clicks', value: s.clicks, color: 'var(--funnel-2)' },
     { label: 'LP Views', value: s.lpViews, color: 'var(--funnel-3)' },
     { label: 'Registrations (all MQLs)', value: ic.mqlYes + ic.mqlNo + ic.mqlBlank, color: 'var(--funnel-4)' },
-    { label: 'Real MQL', value: ic.mqlYes, color: 'var(--funnel-5)' }
+    { label: 'Real MQL', value: ic.mqlYes, color: 'var(--funnel-5)' },
+    // Booked ⊆ Real MQL, así que el funnel sigue siendo monotónico. Verde (--series-2, el
+    // color "positivo" de marca) para que el paso final de conversión se distinga del gradiente violeta.
+    { label: 'Booked', value: ic.booked, color: 'var(--series-2)' }
   ];
   const max = stages[0].value || 1;
   const body = document.getElementById('funnel-body');
@@ -1565,7 +1606,7 @@ function renderFunnel(rows) {
 let perfDim = 'account';
 let perfSortKey = 'spend', perfSortDir = -1;
 const PERF_DIM_LABELS = { account: 'Account', campaign: 'Campaign', adset: 'Ad Set' };
-// mismo orden que el <thead> de #perf-table -- cada fila desglosa los 12 Big Numbers
+// mismo orden que el <thead> de #perf-table -- cada fila desglosa los Big Numbers
 const PERF_COLUMNS = [
   { key: 'spend', fmt: 'money' },
   { key: 'clicks', fmt: 'int' },
@@ -1578,7 +1619,9 @@ const PERF_COLUMNS = [
   { key: 'mqlNo', fmt: 'int' },
   { key: 'cpsch', fmt: 'money' },
   { key: 'mqlQualified', fmt: 'int' },
-  { key: 'cpqmql', fmt: 'money' }
+  { key: 'cpqmql', fmt: 'money' },
+  { key: 'booked', fmt: 'int' },
+  { key: 'cpbooking', fmt: 'money' }
 ];
 
 // Desglose de los Big Numbers por Account/Campaign/Ad Set. Las métricas de Meta (spend,
@@ -1591,7 +1634,7 @@ function computePerfRows() {
   const groups = new Map();
   const ensure = (v) => {
     const key = v || '(unattributed)';
-    if (!groups.has(key)) groups.set(key, { name: key, spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0 });
+    if (!groups.has(key)) groups.set(key, { name: key, spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0 });
     return groups.get(key);
   };
 
@@ -1614,6 +1657,7 @@ function computePerfRows() {
       const g = ensure(v);
       if (c.mql === 'yes') g.mqlYes++; else if (c.mql === 'no') g.mqlNo++; else g.mqlBlank++;
       if (c.qualified) g.mqlQualified++;
+      if (c.booked) g.booked++;
     });
   });
 
@@ -1626,7 +1670,8 @@ function computePerfRows() {
       frequency: safeDiv(g.impressions, g.reach),
       funnelcvr: safeDiv(g.mqlYes, g.lpViews),
       cpsch: safeDiv(g.spend, g.mqlYes),
-      cpqmql: safeDiv(g.spend, g.mqlQualified)
+      cpqmql: safeDiv(g.spend, g.mqlQualified),
+      cpbooking: safeDiv(g.spend, g.booked)
     }));
 }
 
