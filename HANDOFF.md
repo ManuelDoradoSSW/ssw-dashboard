@@ -1,6 +1,6 @@
 # HANDOFF — SSW Account Dashboard (Meta Ads)
 
-Last updated: 2026-08-08. Written for a fresh Claude session to pick this up with zero prior context.
+Last updated: 2026-08-19. Written for a fresh Claude session to pick this up with zero prior context.
 
 ## 1. Objetivo
 
@@ -109,11 +109,38 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
   con Spend/Impressions/Clicks, mayor/menor que + valor). **Click en un punto** resalta
   esa fila en Creative Performance y hace scroll hasta ahí (compensando la altura de la
   barra de filtros sticky).
-- Funnel: Impressions → Clicks → LP Views → Registrations (all MQLs, de iClosed) → Real MQL.
+- Funnel: Impressions → Clicks → LP Views → Registrations (all MQLs, de iClosed) → Real MQL
+  → **Booked** (paso agregado 2026-08-19, en verde `--series-2` para distinguirlo del gradiente
+  violeta; Booked ⊆ Real MQL así que el funnel sigue monotónico).
 - **Qualified MQL**: `iClosed_Raw` pasó a 7 columnas (se agregó `Lead Score` como columna G,
   2026-08-06) — "Quality"/"High Quality"/similar = qualified, vacío o "Low Quality" no
   cuenta (ver §5 para el detalle exacto de la regla). Métrica independiente de Real MQL,
   no un subconjunto.
+- **Bookings / Cost per Booking** (agregado 2026-08-19): métrica **por contacto** que sale de
+  2 columnas nuevas de `iClosed_Raw` (H `Scheduling status`, I `Event` — ver §5). Un contacto
+  cuenta como Booked si **Real MQL = Yes** Y **Scheduling status = DISCOVERY_CALL_BOOKED** Y
+  el Event contiene "Call A" pero **NO** "Call B" (si agendó ambas, o solo la B, no cuenta).
+  Real MQL=Yes es un gate estricto **por decisión explícita del usuario** (ver §4) -- deja
+  afuera ~113 filas que cumplen las otras 2 condiciones pero tienen Real MQL en blanco (mayoría
+  bookings anteriores al 14/6/2026, cuando no se trackeaba Real MQL) o en "No" (spam). Por eso
+  Bookings se ve bajo en rangos largos/YTD; en Last 7/30 casi no se nota. Se agregó a Big Numbers
+  (2 tiles en Lead Quality), al selector del Spend chart, a la tabla Creative Performance, a la
+  tabla Performance per, al scatter, y como paso del funnel. Sigue la misma lógica dual que Real
+  MQL: contactos deduplicados (`ICLOSED_CONTACTS`) en Big Numbers/Funnel/chart/Performance-per,
+  por-ad (`aggregateByAd`) en Creative Performance/scatter. `booked` se lleva en cada contacto
+  igual que `mql`/`qualified`.
+- **Tabla "Performance per"** (agregada 2026-08-19): card entre el Spend chart y Creative
+  Performance. Selector inline en el título (Account/Campaign/Ad Set, default Account, mismo
+  patrón que los selects del Spend chart) que desglosa TODOS los Big Numbers por la entidad
+  elegida. Sigue los filtros de arriba y es ordenable por cualquier columna. Métricas de Meta
+  se suman de `UNIFIED`; las de iClosed cuentan contactos deduplicados contándolos una vez por
+  cada entidad tocada (por eso las filas pueden sumar más que Big Numbers, igual que Creative
+  Performance). Fila `(unattributed)` = contactos de iClosed cuyo ad no matchea Meta_Raw.
+  Funciones: `computePerfRows()`/`renderPerfTable()`/`setupPerfTable()` + `PERF_COLUMNS`.
+- **Big Numbers en "burbujas"** (2026-08-19): cada `.bignum-tile` es una caja recesada
+  (`background: var(--surface-2)` sobre el `--surface-1` de la card, borde `--border`, radio
+  12px), con hover que la tiñe de violeta (`--highlight-bg`) + borde `--series-1` + sombra.
+  Solo variables temáticas, sin colores nuevos.
 - Branding: logo SSW arriba, paleta violeta/verde. El dorado (`--accent`, `#E6C301` dark /
   `#8a6a00` light) está **reservado** para el h1 y los valores de Big Numbers/chart-select
   -- no es el color de texto por default (eso cambió en el rediseño del 2026-08-07, antes
@@ -162,6 +189,13 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
 - **"Schedules" = Real MQL de iClosed (Yes), no evento de Meta.** Meta trae el dato via
   CAPI pero no es confiable 1:1 por delay/sobre-atribución — decisión tomada al principio
   del proyecto y reconfirmada cuando se descubrió la limitación de Custom Conversions.
+- **Booked exige Real MQL = Yes (gate estricto), NO cuenta blancos ni "No"** (decisión
+  explícita del usuario 2026-08-19, tras mostrarle el trade-off con números). De las 128 filas
+  que cumplen Discovery Call Booked + solo Call A, solo 15 tienen Real MQL=Yes; 16 son "No"
+  (spam que agendó igual) y 97 están en blanco (95 de ellas anteriores al 14/6/2026, cuando no
+  se trackeaba Real MQL). El usuario eligió el criterio estricto sabiendo que deja Bookings
+  bajo en rangos largos. NO cambiar a "contar blancos" salvo pedido explícito. Se le ofrecieron
+  3 variantes (solo-Yes / excluir-solo-spam / sin-chequeo) y eligió solo-Yes.
 - **Registrations (funnel) = suma de Yes+No+Blank de iClosed**, no el campo `registrations`
   de Meta — se cambió a mitad de sesión porque con el campo de Meta el funnel quedaba
   no-monotónico (Real MQL > Registrations en algunos filtros).
@@ -206,8 +240,9 @@ gviz, que viene vacía) — el parser lee por **posición fija de columna**, no 
 **`PostHog_Raw`** (4 columnas): `Date, Ad, Sessions, Bounced Sessions` — llenada por `syncPostHog()`.
 ("Sessions" en realidad son "Visitors" de PostHog — funciona igual para el cálculo, ver comentario en el código.)
 
-**`iClosed_Raw`** (7 columnas, desde 2026-08-06): `Date, Account, Campaign, Ad Set, Ad,
-Real MQL, Lead Score` — **manual, el usuario pega el export de iClosed acá**. `Real MQL`
+**`iClosed_Raw`** (9 columnas, desde 2026-08-19): `Date, Account, Campaign, Ad Set, Ad,
+Real MQL, Lead Score, Scheduling status, Event` — **manual, el usuario pega el export de
+iClosed acá**. `Real MQL`
 es texto `YES` / `NO` / vacío (vacío = contactos de antes del 14/6/2026 cuando no existía
 el campo, o algún hueco posterior). `Lead Score` (columna G, agregada 2026-08-06) tiene 3
 opciones reales confirmadas contra la Sheet: `"A: High Quality"`, `"B: Quality"`,
@@ -220,10 +255,19 @@ antes del 14/6/2026), lo cual está documentado en un caveat visible en el dashb
 un bug. `Account` casi siempre viene vacío (iClosed no lo trae) — el dashboard lo completa
 automáticamente cruzando `Campaign` contra `Meta_Raw` cuando puede.
 
+`Scheduling status` (columna H, `r.c[7]`, agregada 2026-08-19): texto tipo `DISCOVERY_CALL_BOOKED`,
+`POTENTIAL`, `QUALIFIED` (mayúsculas con guiones bajos). `Event` (columna I, `r.c[8]`): nombre(s)
+de la(s) call(s) agendada(s), varios separados por coma en un solo campo (ej. `SSW Assessment
+Call B, SSW Assessment Call A`). Las dos alimentan la métrica **Booked** (ver §3): el parser
+normaliza el status (`.toUpperCase().replace(/[\s_]+/g,' ')` → compara contra `DISCOVERY CALL
+BOOKED`) y testea el Event con `/\bCALL A\b/` y `/\bCALL B\b/`. Booked = Real MQL Yes + status
+booked + tiene Call A + NO tiene Call B. Confirmado con re-parse del sheet crudo (15 bookings,
+matchea el modelo del dashboard).
+
 **IMPORTANTE — posición fija de columnas**: el parser de `iClosed_Raw` lee por índice
-(`r.c[6]` para Lead Score), no por nombre de header. Si en algún momento se agrega otra
-columna a este tab, tiene que ir **al final** (columna H en adelante) — insertarla en
-el medio corre todo lo que viene después y rompe el join.
+(`r.c[6]` Lead Score, `r.c[7]` Scheduling status, `r.c[8]` Event), no por nombre de header.
+Si en algún momento se agrega otra columna a este tab, tiene que ir **al final** (columna J en
+adelante) — insertarla en el medio corre todo lo que viene después y rompe el join.
 
 **Meta Ads — 3 cuentas:**
 | Nombre | Account ID |
@@ -310,6 +354,16 @@ la automatización en curso -- ver §7).
   bajo `offsite_conversion.fb_pixel_custom`). Si en algún momento se crean esas Custom
   Conversions en Ads Manager, ahí sí se podría retomar "Meta Schedules" como métrica
   separada — hoy está deliberadamente sacada del dashboard.
+- **Thumbnails de Creative Performance expiran (varios no cargan → 403).** `Code.gs`
+  guarda `creative{thumbnail_url}` (URL de CDN de Meta, firmada y temporal) en la columna
+  `Thumbnail URL` de Meta_Raw, por fila. `syncMeta` solo refresca los últimos 10 días, así que
+  cualquier ad cuyas filas son todas > 10 días queda con URL vencida y la imagen no carga. NO
+  es pérdida permanente del dato: `thumbnail_url` se re-firma en cada request, así que re-pedir
+  por `ad_id` (mientras el ad exista en Meta) devuelve una URL nueva válida. Se agregó un
+  **placeholder con las iniciales del ad** vía `onerror` en el `<img>` (2026-08-19) para que las
+  que fallan no se vean rotas. La solución durable (guardar los bytes de la imagen en Google
+  Drive una vez por ad y referenciar la URL estable de Drive) quedó **propuesta pero no
+  implementada** -- ver §7. `fetchThumbnailsForAdIds()` en Code.gs es donde se pide hoy.
 - **Encoding de iClosed**: el export de iClosed trae `Ad`/`Campaign`/`Ad Set` con espacios
   codificados como `+` (ej: `SSW_ADV+_ACQ.COM...+-+Copy+2`), y a veces varios ads separados
   por coma en una sola celda (multi-touch). Ya resuelto con un algoritmo de crosscheck
@@ -411,6 +465,20 @@ with origin/main"). Si el usuario vuelve con más pedidos, el flujo es:
    pegando parches parciales), y después traer la copia actualizada a este repo también.
 
 Pendiente opcional (no pedido, solo sugerido si surge la oportunidad):
+- **Persistencia durable de thumbnails (propuesto 2026-08-19, esperando decisión del usuario).**
+  El problema (thumbnails que expiran) está en §6. La solución robusta: en `Code.gs`, una
+  función que por cada `ad_id` baje los bytes de la imagen (`creative{thumbnail_url}` o mejor
+  `creative{image_url}` para más resolución) UNA vez, la guarde en una carpeta pública de Google
+  Drive, y escriba `ad_name → driveFileId` en un tab nuevo `Creatives`. El dashboard leería ese
+  tab y renderizaría `https://drive.google.com/thumbnail?id=<id>&sz=w96` (estable para archivos
+  públicos), con fallback a la URL de Meta y después al placeholder de iniciales que ya existe.
+  Trade-offs: toca Code.gs (fuente de verdad = Apps Script) + permisos de Drive + un tab nuevo +
+  el join del HTML; solo se pueden capturar imágenes de ads que TODAVÍA existen en Meta (los ya
+  borrados con URL vencida son irrecuperables); el hotlink de Drive puede tener rate-limit en
+  tráfico alto (ok para uso interno). Alternativa más liviana pero menos robusta: refrescar las
+  URLs (no los bytes) de TODOS los ads a diario en el tab `Creatives` -- pero las URLs igual
+  pueden vencer entre refreshes y los ads borrados igual rompen. El placeholder con iniciales
+  (`onerror` en el `<img>`) ya está implementado como mínimo prolijo.
 - Si el volumen de datos sigue creciendo mucho (Meta_Raw ya tiene ~9,500 filas), vigilar
   que Google Sheets no se ponga lento — no es un problema todavía.
 - (RESUELTO) Qualified MQL / Cost per Qualified MQL: ya están en Big Numbers, la tabla
