@@ -359,11 +359,17 @@ la automatización en curso -- ver §7).
   `Thumbnail URL` de Meta_Raw, por fila. `syncMeta` solo refresca los últimos 10 días, así que
   cualquier ad cuyas filas son todas > 10 días queda con URL vencida y la imagen no carga. NO
   es pérdida permanente del dato: `thumbnail_url` se re-firma en cada request, así que re-pedir
-  por `ad_id` (mientras el ad exista en Meta) devuelve una URL nueva válida. Se agregó un
-  **placeholder con las iniciales del ad** vía `onerror` en el `<img>` (2026-08-19) para que las
-  que fallan no se vean rotas. La solución durable (guardar los bytes de la imagen en Google
-  Drive una vez por ad y referenciar la URL estable de Drive) quedó **propuesta pero no
-  implementada** -- ver §7. `fetchThumbnailsForAdIds()` en Code.gs es donde se pide hoy.
+  por `ad_id` (mientras el ad exista en Meta) devuelve una URL nueva válida. Se implementaron 2
+  mitigaciones (2026-08-19): (1) un **placeholder** neutro (ícono de imagen) vía `onerror` en el
+  `<img>` para que las que fallan no se vean rotas (`thumbCell()` + `.creative-thumb-ph`), y (2)
+  un **refresh diario de URLs** -- `syncCreatives()` en Code.gs enumera TODOS los ads de las 3
+  cuentas (`/{account}/ads?fields=name,creative{thumbnail_url}`) y escribe `Ad → Thumbnail URL`
+  fresca en un tab nuevo `Creatives`; el dashboard lo lee (`loadCreativeThumbs()` → `CREATIVE_THUMBS`)
+  y esa URL pisa la guardada por fila en Meta_Raw (`thumbCell` usa `CREATIVE_THUMBS.get(r.ad) ||
+  r.thumbnailUrl`). NO guarda los bytes: si un ad se borra de Meta o la URL vence entre corridas,
+  esa imagen igual puede fallar (→ placeholder). La variante durable-total (bytes a Drive) sigue
+  disponible como opción, ver §7. `fetchThumbnailsForAdIds()` es el pull viejo por-fila (sigue
+  llenando la columna Thumbnail URL de Meta_Raw en syncMeta/backfill).
 - **Encoding de iClosed**: el export de iClosed trae `Ad`/`Campaign`/`Ad Set` con espacios
   codificados como `+` (ej: `SSW_ADV+_ACQ.COM...+-+Copy+2`), y a veces varios ads separados
   por coma en una sola celda (multi-touch). Ya resuelto con un algoritmo de crosscheck
@@ -464,21 +470,27 @@ with origin/main"). Si el usuario vuelve con más pedidos, el flujo es:
    código ahí primero (Cmd+A, borrar, pegar completo — el usuario tuvo problemas antes
    pegando parches parciales), y después traer la copia actualizada a este repo también.
 
+Setup pendiente del usuario (thumbnails, 2026-08-19) -- el código ya está commiteado, falta
+que el usuario haga la parte de Apps Script una sola vez:
+1. Pegar el `Code.gs` actualizado en el editor de Apps Script (Cmd+A, borrar, pegar completo).
+2. Correr `syncCreatives()` una vez a mano (autoriza Drive/Sheets si lo pide, crea el tab
+   `Creatives` solo, lo llena). Verificar en la Sheet que el tab tenga `Ad | Thumbnail URL`.
+3. Correr `createCreativesTrigger()` una vez para dejar el refresh diario (~2am). NO correr
+   `createTriggers()` (ese recrea también el trigger de syncIClosed, que sigue roto -- ver arriba).
+El dashboard ya lee el tab `Creatives` (`loadCreativeThumbs`/`CREATIVE_THUMBS`) y tolera que no
+exista todavía (gviz devuelve Meta_Raw como fallback, y el loader lo valida por header). Incluso
+antes del setup ya mejora (usa la URL más reciente guardada por ad).
+
 Pendiente opcional (no pedido, solo sugerido si surge la oportunidad):
-- **Persistencia durable de thumbnails (propuesto 2026-08-19, esperando decisión del usuario).**
-  El problema (thumbnails que expiran) está en §6. La solución robusta: en `Code.gs`, una
-  función que por cada `ad_id` baje los bytes de la imagen (`creative{thumbnail_url}` o mejor
-  `creative{image_url}` para más resolución) UNA vez, la guarde en una carpeta pública de Google
-  Drive, y escriba `ad_name → driveFileId` en un tab nuevo `Creatives`. El dashboard leería ese
-  tab y renderizaría `https://drive.google.com/thumbnail?id=<id>&sz=w96` (estable para archivos
-  públicos), con fallback a la URL de Meta y después al placeholder de iniciales que ya existe.
-  Trade-offs: toca Code.gs (fuente de verdad = Apps Script) + permisos de Drive + un tab nuevo +
-  el join del HTML; solo se pueden capturar imágenes de ads que TODAVÍA existen en Meta (los ya
-  borrados con URL vencida son irrecuperables); el hotlink de Drive puede tener rate-limit en
-  tráfico alto (ok para uso interno). Alternativa más liviana pero menos robusta: refrescar las
-  URLs (no los bytes) de TODOS los ads a diario en el tab `Creatives` -- pero las URLs igual
-  pueden vencer entre refreshes y los ads borrados igual rompen. El placeholder con iniciales
-  (`onerror` en el `<img>`) ya está implementado como mínimo prolijo.
+- **Persistencia TOTAL de thumbnails (bytes a Drive) -- NO implementada, es la alternativa a
+  syncCreatives si el refresh de URLs no alcanza.** syncCreatives (implementado) refresca las
+  URLs a diario, pero una URL puede vencer entre corridas y los ads borrados de Meta igual quedan
+  sin imagen. Si eso molesta, la versión robusta: en `Code.gs`, bajar los BYTES de la imagen
+  (`creative{image_url}` para más resolución) UNA vez por ad, guardarlos en una carpeta pública de
+  Google Drive, y guardar `ad_name → driveFileId` (agregando una 3ra columna al tab `Creatives`);
+  el dashboard usaría `https://drive.google.com/thumbnail?id=<id>&sz=w96`. Trade-offs: permisos de
+  Drive, solo captura ads que aún existen en Meta, hotlink de Drive puede tener rate-limit (ok
+  para uso interno). El usuario eligió el refresh de URLs (más liviano) 2026-08-19.
 - Si el volumen de datos sigue creciendo mucho (Meta_Raw ya tiene ~9,500 filas), vigilar
   que Google Sheets no se ponga lento — no es un problema todavía.
 - (RESUELTO) Qualified MQL / Cost per Qualified MQL: ya están en Big Numbers, la tabla

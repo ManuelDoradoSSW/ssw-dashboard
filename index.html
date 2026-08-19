@@ -672,6 +672,7 @@ let UNIFIED = []; // flat rows at Date x Account x Campaign x AdSet x Ad grain
 let charts = {};
 let postHogStartDate = null; // primera fecha con sesiones de PostHog reales (ver caveat en Creative Performance)
 let ICLOSED_CONTACTS = []; // un elemento por contacto real de iClosed_Raw (deduplicado, no explotado por ad)
+let CREATIVE_THUMBS = new Map(); // ad name -> thumbnail URL fresca (tab Creatives, refrescada a diario por Apps Script)
 
 // ===================== THEME =====================
 // Checkbox "Dark mode" en los filtros pisa la preferencia del sistema (prefers-color-scheme)
@@ -741,14 +742,47 @@ function dataRows(table) {
   return (table.rows || []).slice(1).filter(r => r.c && r.c[0] && r.c[0].v);
 }
 
+// Llena CREATIVE_THUMBS (ad name -> URL fresca) desde el tab Creatives. OJO: si esa tab no
+// existe, gviz NO da error, devuelve la PRIMERA tab (Meta_Raw) con status ok -- por eso hay
+// que ubicar las columnas por su header ('Ad' / 'Thumbnail URL') y no por posición fija. Como
+// Meta_Raw también tiene esas 2 columnas, el fallback termina cargando sus thumbnails (los
+// mismos que ya usa el dashboard por fila), así que no hay regresión antes de crear la tab.
+function loadCreativeThumbs(table) {
+  CREATIVE_THUMBS = new Map();
+  if (!table || !table.cols) return;
+  const labels = table.cols.map(c => (c && c.label) ? String(c.label).trim() : '');
+  let adIdx = labels.indexOf('Ad');
+  let urlIdx = labels.indexOf('Thumbnail URL');
+  let rows = table.rows || [];
+  if (adIdx === -1 || urlIdx === -1) {
+    // los headers no vinieron en cols -> pueden estar en la fila 0 de los datos
+    const first = (rows[0] && rows[0].c) ? rows[0].c.map(cellStr) : [];
+    adIdx = first.indexOf('Ad');
+    urlIdx = first.indexOf('Thumbnail URL');
+    if (adIdx === -1 || urlIdx === -1) return; // no es la tab Creatives (o está vacía)
+    rows = rows.slice(1);
+  }
+  rows.forEach(r => {
+    if (!r.c) return;
+    const ad = cellStr(r.c[adIdx]);
+    const url = cellStr(r.c[urlIdx]);
+    if (ad && url) CREATIVE_THUMBS.set(ad, url);
+  });
+}
+
 // ===================== LOAD + MERGE =====================
 
 async function loadAll() {
-  const [metaTable, phTable, icTable] = await Promise.all([
+  // Creatives puede no existir todavía (hasta que se corra syncCreatives en Apps Script);
+  // .catch para que un fallo ahí nunca rompa la carga del resto.
+  const [metaTable, phTable, icTable, creativesTable] = await Promise.all([
     fetchSheetTab('Meta_Raw'),
     fetchSheetTab('PostHog_Raw'),
-    fetchSheetTab('iClosed_Raw')
+    fetchSheetTab('iClosed_Raw'),
+    fetchSheetTab('Creatives').catch(() => null)
   ]);
+
+  loadCreativeThumbs(creativesTable);
 
   const metaRows = dataRows(metaTable).map(r => ({
     date: cellDate(r.c[0]), account: cellStr(r.c[1]), campaign: cellStr(r.c[2]), adset: cellStr(r.c[3]), ad: cellStr(r.c[4]),
@@ -1421,8 +1455,11 @@ const IMG_PLACEHOLDER_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="curren
 // si falla, onerror la oculta y queda el placeholder neutro debajo en vez de una imagen rota.
 function thumbCell(r) {
   const ph = '<span class="creative-thumb-ph">' + IMG_PLACEHOLDER_SVG + '</span>';
-  if (!r.thumbnailUrl) return '<div class="creative-thumb-wrap">' + ph + '</div>';
-  const u = escapeHtml(r.thumbnailUrl);
+  // URL fresca del tab Creatives (refrescada a diario) tiene prioridad sobre la guardada por
+  // fila en Meta_Raw, que puede estar vencida. Fallback a la de la fila si no hay en el tab.
+  const fresh = CREATIVE_THUMBS.get(r.ad) || r.thumbnailUrl;
+  if (!fresh) return '<div class="creative-thumb-wrap">' + ph + '</div>';
+  const u = escapeHtml(fresh);
   return '<a href="' + u + '" target="_blank" rel="noopener"><div class="creative-thumb-wrap">'
     + ph + '<img class="creative-thumb" src="' + u + '" alt="" onerror="this.style.display=\'none\'"></div></a>';
 }

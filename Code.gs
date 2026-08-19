@@ -16,12 +16,15 @@ var META_HEADERS = ['Date', 'Account', 'Campaign', 'Ad Set', 'Ad', 'Spend', 'Imp
   'Clicks', 'Reach', 'Frequency', 'LP Views', 'Registrations', 'Schedules (Meta)', 'Video Views', 'Thumbnail URL'];
 var POSTHOG_HEADERS = ['Date', 'Ad', 'Sessions', 'Bounced Sessions'];
 var ICLOSED_HEADERS = ['Date', 'Account', 'Campaign', 'Ad Set', 'Ad', 'Real MQL', 'Lead Score'];
+var CREATIVES_SHEET = 'Creatives';
+var CREATIVES_HEADERS = ['Ad', 'Thumbnail URL'];
 
 // ===================== ENTRY POINTS =====================
 
 function runDailySync() {
   syncMeta();
   syncPostHog();
+  syncCreatives();
   syncIClosed();
 }
 
@@ -30,6 +33,16 @@ function createTriggers() {
   ScriptApp.newTrigger('syncMeta').timeBased().everyDays(1).atHour(3).create();
   ScriptApp.newTrigger('syncPostHog').timeBased().everyDays(1).atHour(4).create();
   ScriptApp.newTrigger('syncIClosed').timeBased().everyDays(1).atHour(5).create();
+}
+
+// Agrega SOLO el trigger diario de syncCreatives, sin tocar los otros (a diferencia de
+// createTriggers, que los recrea todos -- incluido el de syncIClosed, que NO debe activarse
+// mientras ese sync siga roto, ver HANDOFF §7). Correr una vez desde el editor de Apps Script.
+function createCreativesTrigger() {
+  var exists = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'syncCreatives'; });
+  if (exists) { Logger.log('El trigger de syncCreatives ya existe, no hago nada.'); return; }
+  ScriptApp.newTrigger('syncCreatives').timeBased().everyDays(1).atHour(2).create();
+  Logger.log('Trigger de syncCreatives creado (diario ~2am).');
 }
 
 // ===================== META =====================
@@ -200,6 +213,65 @@ function fetchThumbnailsForAdIds(adIds, token) {
     });
   }
   return map;
+}
+
+// ===================== CREATIVES (thumbnails frescos) =====================
+// Las URLs de thumbnail de Meta son links de CDN firmados y TEMPORALES -- expiran (403). syncMeta
+// solo refresca la ventana de WINDOW_DAYS, así que los ads más viejos quedan con la URL vencida y
+// su imagen no carga en el dashboard. Esta función enumera TODOS los ads de las 3 cuentas (no solo
+// los que tuvieron entrega en la ventana) y guarda su thumbnail_url ACTUAL en el tab Creatives,
+// keyed por nombre de ad (que es como joinea el dashboard). Corriéndola a diario, el dashboard
+// siempre tiene URLs de <24h. No guarda los bytes de la imagen: si el ad se borra de Meta o la URL
+// vence entre corridas, esa imagen igual puede fallar -- para persistencia total habría que bajar
+// los bytes a Drive (ver HANDOFF §7). El dashboard usa esta URL para pisar la guardada en Meta_Raw.
+function syncCreatives() {
+  var token = PropertiesService.getScriptProperties().getProperty('META_TOKEN');
+  if (!token) throw new Error('Falta META_TOKEN en Script Properties');
+
+  var byName = {};
+  var count = 0;
+  META_ACCOUNTS.forEach(function (acc) {
+    try {
+      fetchAccountCreatives(acc, token).forEach(function (c) {
+        if (c.name && c.thumbnailUrl) { byName[c.name] = c.thumbnailUrl; count++; }
+      });
+    } catch (e) {
+      Logger.log('syncCreatives ' + acc.name + ' FALLO, sigo con el resto: ' + e.message);
+    }
+  });
+
+  var rows = Object.keys(byName).map(function (name) { return [name, byName[name]]; });
+  writeWholeSheet(CREATIVES_SHEET, CREATIVES_HEADERS, rows);
+  Logger.log('Creatives: ' + rows.length + ' ads con thumbnail (de ' + count + ' ads vistos en total).');
+}
+
+function fetchAccountCreatives(account, token) {
+  var out = [];
+  var url = 'https://graph.facebook.com/' + GRAPH_API_VERSION + '/' + account.id + '/ads'
+    + '?fields=' + encodeURIComponent('name,creative{thumbnail_url}')
+    + '&limit=200&access_token=' + token;
+  while (url) {
+    var json = fetchJsonWithRetry(url, account.name);
+    (json.data || []).forEach(function (ad) {
+      out.push({ name: ad.name || '', thumbnailUrl: (ad.creative && ad.creative.thumbnail_url) || '' });
+    });
+    url = json.paging && json.paging.next ? json.paging.next : null;
+  }
+  return out;
+}
+
+// Reemplaza el contenido entero de una tab (la crea si no existe). A diferencia de upsertRows no
+// filtra por fecha -- Creatives es un snapshot completo que se reescribe en cada corrida.
+function writeWholeSheet(sheetName, headers, rows) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+  var maxRows = sheet.getMaxRows();
+  if (maxRows > 1) sheet.getRange(2, 1, maxRows - 1, headers.length).clearContent();
+  if (rows.length > 0) sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
 }
 
 function debugMetaActions() {
