@@ -737,9 +737,16 @@ function cellDate(c) {
 }
 
 function dataRows(table) {
-  // fila 0 de "rows" son los headers (el sheet no tiene metadata de header formal),
-  // así que se descarta y se lee por posición fija
-  return (table.rows || []).slice(1).filter(r => r.c && r.c[0] && r.c[0].v);
+  // gviz a veces mete los headers en `cols` (y rows[] son todos datos) y a veces deja el header
+  // como fila 0 de `rows` -- depende de si detecta el header por tipos. El slice(1) fijo de antes
+  // descartaba una fila REAL en el primer caso. En vez de eso, se filtra por la columna Date (col 0):
+  // toda fila de datos tiene un Date(...) de gviz; la fila de header tiene el texto "Date".
+  return (table.rows || []).filter(r => {
+    if (!r.c || !r.c[0] || r.c[0].v == null) return false;
+    const v = r.c[0].v;
+    if (typeof v !== 'string') return true; // Date/number nativo -> es dato
+    return /^Date\(/.test(v) || /^\d{4}-\d{2}-\d{2}/.test(v) || /^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(v);
+  });
 }
 
 // Llena CREATIVE_THUMBS (ad name -> URL fresca) desde el tab Creatives. OJO: si esa tab no
@@ -798,16 +805,22 @@ async function loadAll() {
   postHogStartDate = phDatesWithSessions.length ? phDatesWithSessions.sort()[0] : null;
 
   const adsByDate = buildAdCrosscheck(metaRows);
-  // iClosed nunca trae Account -- lo completo cruzando el Campaign contra Meta_Raw
-  // (mismo problema de "+" que en Ad, así que reuso la misma lógica de crosscheck)
+  // crosschecks para revertir el encoding "+" de los utm de iClosed contra los nombres reales de
+  // Meta (Campaign = utm_campaign, Ad Set = utm_medium). Se resuelve cada touch por su propio utm,
+  // NO por ad name -- el mismo creative corre en varios ad sets/campañas y matchear por ad daba
+  // una atribución arbitraria (bug reportado: 2 Real MQL de ACQ.COM aparecían bajo EZELIST).
   const campaignCrosscheck = buildNameCrosscheck(metaRows.map(r => r.campaign));
+  const adsetCrosscheck = buildNameCrosscheck(metaRows.map(r => r.adset));
   const campaignToAccount = new Map();
   metaRows.forEach(r => { if (!campaignToAccount.has(r.campaign)) campaignToAccount.set(r.campaign, r.account); });
 
   const icRows = dataRows(icTable).flatMap((r, icRowId) => {
     const date = cellDate(r.c[0]);
-    const campaign = resolveByCrosscheck(cellStr(r.c[2]), campaignCrosscheck);
-    const account = cellStr(r.c[1]) || campaignToAccount.get(campaign) || '';
+    const icAccount = cellStr(r.c[1]);
+    // campaign/adset/ad vienen como listas separadas por coma en contactos multi-touch, alineadas
+    // por posición (touch i = campaña i, ad set i, ad i). Se parten las 3 y se resuelve cada touch
+    // por su propio utm -- así un contacto que tocó 2 ad sets se atribuye a cada uno correctamente.
+    const campaignCandidates = splitMultiValue(cellStr(r.c[2]));
     const adsetCandidates = splitMultiValue(cellStr(r.c[3]));
     const adCandidates = splitMultiValue(cellStr(r.c[4]));
     const mqlRaw = cellStr(r.c[5]).trim().toUpperCase();
@@ -830,39 +843,28 @@ async function loadAll() {
     // multi-touch genera varias filas acá (una por ad tocado) para que cada ad reciba su crédito en
     // la tabla de Creative Performance, pero sigue siendo UN solo contacto. Sin este id no hay forma
     // de distinguir "2 contactos distintos" de "1 contacto que tocó 2 ads" más adelante.
-    return ads.map((rawAd, i) => ({
-      date, account, campaign,
-      adset: decodePlusEncoded(adsetCandidates[i] || adsetCandidates[0] || ''),
-      ad: resolveAdName(rawAd, date, adsByDate),
-      mql, qualified, booked, icRowId
-    }));
+    return ads.map((rawAd, i) => {
+      const campaign = resolveByCrosscheck(campaignCandidates[i] || campaignCandidates[0] || '', campaignCrosscheck);
+      const adset = resolveByCrosscheck(adsetCandidates[i] || adsetCandidates[0] || '', adsetCrosscheck);
+      const account = icAccount || campaignToAccount.get(campaign) || '';
+      return { date, account, campaign, adset, ad: resolveAdName(rawAd, date, adsByDate), mql, qualified, booked, icRowId };
+    });
   });
 
   // Vista deduplicada por contacto (no por ad) -- Big Numbers/Funnel/chart necesitan "cuántos
   // contactos reales hay", no "cuántas combinaciones contacto×ad hay" (eso es lo que agrega
   // sumar directamente sobre icRows/UNIFIED, y duplica a cualquier contacto multi-touch).
   //
-  // Para el Account/Campaign/Ad Set de cada touch, hay que usar el de Meta_Raw (vía date+ad),
-  // NO el `account`/`campaign` ya resuelto en icRows -- ese sale de la columna Campaign cruda
-  // de iClosed, que en filas multi-touch viene con varios valores separados por coma (ej. "Camp
-  // A, Camp B") y el crosscheck no la separa, así que account/campaign quedan vacíos o mal para
-  // ESE contacto entero. El Ad sí se resuelve bien individualmente (ahí sí se hace split), así
-  // que buscar el Account/Campaign real de Meta por date+ad es más confiable que reusar lo que
-  // vino de la columna Campaign de iClosed. Mismo criterio que ya usa mergeSources() para UNIFIED.
-  const metaKeyMap = new Map();
-  metaRows.forEach(r => { metaKeyMap.set(r.date + '' + r.ad, { account: r.account, campaign: r.campaign, adset: r.adset }); });
-
+  // account/campaign/adset de cada touch ya vienen resueltos por SUS PROPIOS utm en icRows
+  // (utm_campaign / utm_medium), NO por date+ad. Antes se cruzaba por date+ad contra Meta_Raw,
+  // pero el mismo creative corre en varios ad sets/campañas, así que ese cruce elegía uno
+  // arbitrario y mal-atribuía (bug reportado: Real MQL de ACQ.COM contados bajo EZELIST).
   const contactMap = new Map();
   icRows.forEach(r => {
     if (!contactMap.has(r.icRowId)) {
       contactMap.set(r.icRowId, { date: r.date, mql: r.mql, qualified: r.qualified, booked: r.booked, touches: [] });
     }
-    const metaInfo = metaKeyMap.get(r.date + '' + r.ad);
-    contactMap.get(r.icRowId).touches.push({
-      account: metaInfo ? metaInfo.account : r.account,
-      campaign: metaInfo ? metaInfo.campaign : r.campaign,
-      adset: metaInfo ? metaInfo.adset : r.adset
-    });
+    contactMap.get(r.icRowId).touches.push({ account: r.account, campaign: r.campaign, adset: r.adset });
   });
   ICLOSED_CONTACTS = Array.from(contactMap.values());
 

@@ -175,15 +175,24 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
   una métrica nueva de Real MQL/Spam/Qualified MQL en cualquier lado, primero preguntarse:
   ¿es un total de cuenta (usar `ICLOSED_CONTACTS`/`sumIClosedContacts`) o es por-ad (usar
   `UNIFIED`/`aggregateByAd`)?
-- **`ICLOSED_CONTACTS.touches[].account/campaign/adset` se resuelven contra `Meta_Raw` por
-  `date+ad`, NO contra el `account`/`campaign` ya calculado en `icRows`** (bug relacionado,
-  arreglado el mismo día): la columna Campaign cruda de iClosed viene con varios valores
-  separados por coma en filas multi-touch, y el crosscheck no la separa (a diferencia de Ad/
-  Ad Set, que sí se parten) -- eso dejaba el account/campaign de ESE contacto vacío o
-  garabateado, y lo excluía silenciosamente de Big Numbers cuando había un filtro de
-  Campaign/Account activo, aunque sus ads sí pertenecieran a ese filtro. Reportado por el
-  usuario como "Big Numbers da 4, Creative Performance da 6" filtrando por la campaña
-  SEARCHSYNC en agosto -- confirmado y arreglado en vivo (ver commit `02f6ad4`).
+- **Atribución de cada touch = por SUS PROPIOS utm (utm_campaign / utm_medium=ad set), NO por
+  ad name/date+ad** (REESCRITO 2026-08-21 -- reemplaza el enfoque date+ad anterior, que estaba
+  MAL). Contexto: el tracking template pone `utm_campaign={{campaign.name}}`,
+  `utm_medium={{adset.name}}`, `utm_content={{ad.name}}`, así que iClosed trae campaña/ad set/ad
+  exactos por touch (comma-joined en multi-touch, alineados por posición). En `icRows` se parten
+  las 3 columnas (`campaignCandidates`/`adsetCandidates`/`adCandidates`) y se resuelve cada touch
+  con `resolveByCrosscheck` contra los nombres reales de Meta (`campaignCrosscheck`/`adsetCrosscheck`,
+  que revierten el encoding "+"); account se deriva de la campaña (`campaignToAccount`). El
+  `contactMap` usa directamente ese account/campaign/adset por-touch (ya NO existe `metaKeyMap`
+  ni cruce date+ad). **Por qué cambió:** el enfoque viejo (resolver contra Meta_Raw por date+ad)
+  fallaba porque **el mismo creative corre en varios ad sets/campañas** -- `metaKeyMap` keyed por
+  date+ad elegía uno arbitrario (último gana) y mal-atribuía. Reportado por el usuario: 2 Real MQL
+  que iClosed marca en `ACQ.COM_BestPerformers` aparecían bajo `EZELIST_BestPerformers`. Confirmado
+  trazando los contactos y arreglado en vivo (EZELIST pasó de 2 a 0, los 2 se movieron a ACQ.COM).
+  Esto TAMBIÉN cubre el viejo bug de "Big Numbers da 4, Creative da 6" (campaña multi-touch), ahora
+  vía split de campaña + crosscheck en vez del workaround date+ad. Los touches sin utm resoluble
+  (ej. ad con el macro `{{campaign.name}}` sin expandir, o sin utm) quedan como su propia fila --
+  es un problema de setup del ad en Meta, se ve pero no se inventa atribución.
 - **Join key = Ad Name (texto)**, no ID. Se aceptó ese riesgo explícitamente (ver §6 para
   el manejo de encoding).
 - **"Schedules" = Real MQL de iClosed (Yes), no evento de Meta.** Meta trae el dato via
@@ -321,6 +330,16 @@ la automatización en curso -- ver §7).
 
 ## 6. Problemas conocidos / bugs abiertos
 
+- **Atribución de Real MQL por ad set/campaña estaba MAL** (RESUELTO 2026-08-21): ver la
+  decisión reescrita en §4. Se atribuía cada touch cruzando `date+ad` contra Meta_Raw, pero el
+  mismo creative corre en varios ad sets/campañas, así que se elegía uno arbitrario. Ahora se
+  atribuye por los utm propios de cada touch (utm_campaign/utm_medium). Reportado por el usuario
+  (EZELIST mostraba 2 Real MQL que en realidad eran de ACQ.COM). NO revertir a date+ad.
+- **`dataRows()` descartaba la primera fila real de cada Sheet** (RESUELTO 2026-08-21): hacía
+  `.slice(1)` asumiendo que rows[0] era el header, pero gviz mete los headers en `cols` y devuelve
+  rows[0] = dato real -- se perdía 1 fila por tab (1 ad de Meta_Raw, 1 contacto de iClosed, etc.).
+  Ahora filtra por la columna Date (col 0 = `Date(...)` en datos, `"Date"` en el header), robusto a
+  cómo gviz devuelva el header. Recuperó ~1 fila por Sheet.
 - **Real MQL/Spam/Qualified MQL duplicaban contactos multi-touch** (RESUELTO 2026-08-08):
   el usuario reportó 37 Real + 35 Spam (72 total) en Big Numbers para un rango donde la
   Sheet tenía 61 filas reales. Causa: esos números salían de sumar `UNIFIED` (explotado por
