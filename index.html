@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SSW Account Dashboard — Meta Ads</title>
+<link rel="icon" id="favicon" type="image/jpeg" href="data:image/jpeg;base64,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root {
@@ -698,6 +699,14 @@ function initTheme() {
   document.getElementById('f-dark-mode').checked = theme === 'dark';
 }
 initTheme();
+
+// Favicon = el mismo logo SSW ya embebido como base64 en el <img.brand-logo> (fuente única,
+// sin duplicar el data URI). Antes salía el planeta genérico del navegador.
+(function () {
+  const logo = document.querySelector('.brand-logo');
+  const fav = document.getElementById('favicon');
+  if (logo && fav && logo.src) fav.href = logo.src;
+})();
 
 document.getElementById('f-dark-mode').addEventListener('change', (e) => {
   setTheme(e.target.checked ? 'dark' : 'light');
