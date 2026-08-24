@@ -282,6 +282,11 @@
   }
   .table-scroll { max-height: 480px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
   .table-meta { color: var(--text-muted); font-size: 12px; margin-top: 8px; font-weight: 700; }
+  /* delta por celda cuando Compare está activo (mismo criterio de color que los Big Numbers) */
+  .cell-delta { display: block; font-size: 10.5px; font-weight: 700; line-height: 1.3; margin-top: 3px; }
+  .cell-delta.delta-good { color: var(--good); }
+  .cell-delta.delta-bad { color: var(--critical); }
+  .cell-delta.delta-neutral { color: var(--text-muted); }
 
   /* ---- scatter controls ---- */
   .axis-controls { display: flex; gap: 24px; margin-bottom: 12px; }
@@ -1445,9 +1450,60 @@ function baseChartOptions(grid, muted, tooltipFmt) {
   };
 }
 
+// ===================== COMPARE HELPERS (tablas) =====================
+
+// Rango de comparación, igual que Big Numbers: período anterior o custom. null si Compare está
+// apagado o si el custom range está incompleto.
+function getCompareRange() {
+  if (!filterState.compare || !filterState.dateFrom || !filterState.dateTo) return null;
+  if (filterState.compareMode === 'custom') {
+    if (!filterState.compareCustomFrom || !filterState.compareCustomTo) return null;
+    return { from: filterState.compareCustomFrom, to: filterState.compareCustomTo };
+  }
+  const p = getPreviousRange(filterState.dateFrom, filterState.dateTo);
+  return { from: p.prevFrom, to: p.prevTo };
+}
+
+// dirección de "bueno" por métrica: up-good (subir = verde), up-bad (subir = rojo), neutral.
+const METRIC_DIRECTION = {
+  spend: 'neutral', impressions: 'up-good', clicks: 'up-good', ctr: 'up-good', cpm: 'up-bad',
+  reach: 'up-good', frequency: 'up-good', lpViews: 'up-good', registrations: 'up-good',
+  mqlYes: 'up-good', mqlNo: 'up-bad', mqlBlank: 'neutral', cpsch: 'up-bad',
+  mqlQualified: 'up-good', cpqmql: 'up-bad', booked: 'up-good', cpbooking: 'up-bad',
+  hookRate: 'up-good', bounceRate: 'up-bad', cp1kreach: 'up-bad', funnelcvr: 'up-good'
+};
+
+// <div.cell-delta> con el % de cambio vs el período anterior (misma lógica que setDelta de Big Numbers)
+function cellDeltaHtml(curr, prev, direction) {
+  if (!prev) return '<div class="cell-delta delta-neutral">' + (curr ? 'new' : '—') + '</div>';
+  const pct = (curr - prev) / prev;
+  const sign = pct >= 0 ? '+' : '';
+  let cls = 'delta-neutral';
+  if (direction === 'up-good') cls = pct > 0 ? 'delta-good' : pct < 0 ? 'delta-bad' : 'delta-neutral';
+  else if (direction === 'up-bad') cls = pct > 0 ? 'delta-bad' : pct < 0 ? 'delta-good' : 'delta-neutral';
+  return '<div class="cell-delta ' + cls + '">' + sign + (pct * 100).toLocaleString('en-US', { maximumFractionDigits: 1 }) + '%</div>';
+}
+
+// valor formateado + (si Compare está activo) su delta contra la misma entidad/ad del período previo
+function metricCell(curr, prevRow, key, fmt, compareOn) {
+  let html = fmtByType(curr, fmt);
+  if (compareOn) html += cellDeltaHtml(curr || 0, prevRow ? (prevRow[key] || 0) : 0, METRIC_DIRECTION[key] || 'neutral');
+  return html;
+}
+
 // ===================== RENDER: CREATIVE TABLE =====================
 
 let tableSortKey = 'spend', tableSortDir = -1;
+// columnas numéricas en el MISMO orden que el <thead> de #creative-table (después de Creative/Ad/Account)
+const CREATIVE_NUM_COLUMNS = [
+  { key: 'spend', fmt: 'money' }, { key: 'impressions', fmt: 'int' }, { key: 'clicks', fmt: 'int' },
+  { key: 'ctr', fmt: 'pct' }, { key: 'cpm', fmt: 'money' }, { key: 'reach', fmt: 'int' },
+  { key: 'frequency', fmt: 'dec' }, { key: 'lpViews', fmt: 'int' }, { key: 'registrations', fmt: 'int' },
+  { key: 'mqlYes', fmt: 'int' }, { key: 'mqlNo', fmt: 'int' }, { key: 'mqlBlank', fmt: 'int' },
+  { key: 'cpsch', fmt: 'money' }, { key: 'mqlQualified', fmt: 'int' }, { key: 'cpqmql', fmt: 'money' },
+  { key: 'booked', fmt: 'int' }, { key: 'cpbooking', fmt: 'money' }, { key: 'hookRate', fmt: 'pct' },
+  { key: 'bounceRate', fmt: 'pct' }
+];
 let highlightedAd = null; // ad seleccionado desde un click en el scatter -- resaltado en esta tabla
 
 // ícono neutro de "imagen" (feather-style, usa currentColor) para el placeholder de thumbnails
@@ -1474,38 +1530,33 @@ function renderCreativeTable(rows) {
     return (va - vb) * tableSortDir;
   });
 
+  // Compare: agregado por ad del período anterior, matcheado por nombre de ad
+  const cmp = getCompareRange();
+  const prevMap = new Map();
+  if (cmp) aggregateByAd(getFilteredRowsForRange(cmp.from, cmp.to)).forEach(a => prevMap.set(a.ad, a));
+
   const tbody = document.getElementById('creative-table-body');
-  tbody.innerHTML = agg.map(r => `
-    <tr class="${r.ad === highlightedAd ? 'row-highlighted' : ''}">
-      <td>${thumbCell(r)}</td>
-      <td>${escapeHtml(r.ad)}</td>
-      <td>${escapeHtml(r.account)}</td>
-      <td>${fmtMoney(r.spend)}</td>
-      <td>${fmtInt(r.impressions)}</td>
-      <td>${fmtInt(r.clicks)}</td>
-      <td>${fmtPct(r.ctr)}</td>
-      <td>${fmtMoney(r.cpm)}</td>
-      <td>${fmtInt(r.reach)}</td>
-      <td>${fmtDec(r.frequency)}</td>
-      <td>${fmtInt(r.lpViews)}</td>
-      <td>${fmtInt(r.registrations)}</td>
-      <td>${fmtInt(r.mqlYes)}</td>
-      <td>${fmtInt(r.mqlNo)}</td>
-      <td>${fmtInt(r.mqlBlank)}</td>
-      <td>${fmtMoney(r.cpsch)}</td>
-      <td>${fmtInt(r.mqlQualified)}</td>
-      <td>${fmtMoney(r.cpqmql)}</td>
-      <td>${fmtInt(r.booked)}</td>
-      <td>${fmtMoney(r.cpbooking)}</td>
-      <td>${fmtPct(r.hookRate)}</td>
-      <td>${r.sessions > 0 ? fmtPct(r.bounceRate) : '—'}</td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = agg.map(r => {
+    const p = cmp ? prevMap.get(r.ad) : null;
+    const numCells = CREATIVE_NUM_COLUMNS.map(c => {
+      if (c.key === 'bounceRate') {
+        // Bounce Rate solo tiene sentido con sesiones de PostHog; sin ellas "—" y sin delta
+        const main = r.sessions > 0 ? fmtPct(r.bounceRate) : '—';
+        const d = (cmp && r.sessions > 0 && p && p.sessions > 0) ? cellDeltaHtml(r.bounceRate, p.bounceRate, 'up-bad') : '';
+        return '<td>' + main + d + '</td>';
+      }
+      return '<td>' + metricCell(r[c.key], p, c.key, c.fmt, !!cmp) + '</td>';
+    }).join('');
+    return '<tr class="' + (r.ad === highlightedAd ? 'row-highlighted' : '') + '">'
+      + '<td>' + thumbCell(r) + '</td><td>' + escapeHtml(r.ad) + '</td><td>' + escapeHtml(r.account) + '</td>'
+      + numCells + '</tr>';
+  }).join('');
 
   document.querySelectorAll('#creative-table th').forEach(th => {
     th.classList.toggle('sorted', th.dataset.key === tableSortKey);
   });
-  document.getElementById('creative-table-meta').textContent = agg.length + ' ads';
+  document.getElementById('creative-table-meta').textContent =
+    agg.length + ' ads' + (cmp ? ' · vs ' + cmp.from + ' – ' + cmp.to : '');
 }
 
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -1691,7 +1742,7 @@ const PERF_COLUMNS = [
 // cuenta una vez por CADA entidad que tocó (equivalente a filtrar la barra de arriba por esa
 // entidad), por eso las filas pueden sumar más que Big Numbers -- mismo criterio que Creative
 // Performance. El Set de valores evita contarlo dos veces si tocó la misma entidad más de una vez.
-function computePerfRows() {
+function computePerfRows(rows, contacts) {
   const groups = new Map();
   const ensure = (v) => {
     const key = v || '(unattributed)';
@@ -1699,14 +1750,14 @@ function computePerfRows() {
     return groups.get(key);
   };
 
-  getFilteredRows().forEach(r => {
+  rows.forEach(r => {
     if (!(r.spend || r.impressions || r.clicks || r.reach || r.lpViews)) return;
     const g = ensure(r[perfDim]);
     g.spend += r.spend || 0; g.impressions += r.impressions || 0; g.clicks += r.clicks || 0;
     g.reach += r.reach || 0; g.lpViews += r.lpViews || 0;
   });
 
-  getFilteredIClosedContacts().forEach(c => {
+  contacts.forEach(c => {
     const vals = new Set();
     c.touches.forEach(t => {
       if (filterState.account.size && !filterState.account.has(t.account)) return;
@@ -1737,7 +1788,14 @@ function computePerfRows() {
 }
 
 function renderPerfTable() {
-  const data = computePerfRows();
+  const data = computePerfRows(getFilteredRows(), getFilteredIClosedContacts());
+
+  // Compare: mismo desglose para el período anterior, matcheado por nombre de entidad
+  const cmp = getCompareRange();
+  const prevMap = new Map();
+  if (cmp) computePerfRows(getFilteredRowsForRange(cmp.from, cmp.to), getFilteredIClosedContactsForRange(cmp.from, cmp.to))
+    .forEach(r => prevMap.set(r.name, r));
+
   data.sort((a, b) => {
     if (perfSortKey === 'name') return a.name.localeCompare(b.name) * perfSortDir * -1;
     return ((a[perfSortKey] || 0) - (b[perfSortKey] || 0)) * perfSortDir;
@@ -1745,17 +1803,19 @@ function renderPerfTable() {
 
   document.getElementById('perf-th-name').textContent = PERF_DIM_LABELS[perfDim];
   const tbody = document.getElementById('perf-table-body');
-  tbody.innerHTML = data.map(r =>
-    '<tr><td title="' + escapeHtml(r.name) + '">' + escapeHtml(r.name) + '</td>' +
-    PERF_COLUMNS.map(c => '<td>' + fmtByType(r[c.key], c.fmt) + '</td>').join('') +
-    '</tr>'
-  ).join('');
+  tbody.innerHTML = data.map(r => {
+    const p = cmp ? prevMap.get(r.name) : null;
+    return '<tr><td title="' + escapeHtml(r.name) + '">' + escapeHtml(r.name) + '</td>' +
+      PERF_COLUMNS.map(c => '<td>' + metricCell(r[c.key], p, c.key, c.fmt, !!cmp) + '</td>').join('') +
+      '</tr>';
+  }).join('');
 
   document.querySelectorAll('#perf-table th').forEach(th => {
     th.classList.toggle('sorted', th.dataset.key === perfSortKey);
   });
   const noun = perfDim === 'account' ? 'accounts' : perfDim === 'campaign' ? 'campaigns' : 'ad sets';
-  document.getElementById('perf-table-meta').textContent = data.length + ' ' + noun;
+  document.getElementById('perf-table-meta').textContent =
+    data.length + ' ' + noun + (cmp ? ' · vs ' + cmp.from + ' – ' + cmp.to : '');
 }
 
 function setupPerfTable() {
@@ -1864,23 +1924,25 @@ function updateCompareControlsVisibility() {
   document.getElementById('compare-custom-to-group').style.display = showCustom ? '' : 'none';
 }
 
+// Compare afecta Big Numbers + tabla Performance per + tabla Creative Performance, así que se
+// re-renderea todo (renderAll) en vez de solo Big Numbers.
 document.getElementById('f-compare').addEventListener('change', (e) => {
   filterState.compare = e.target.checked;
   updateCompareControlsVisibility();
-  renderBigNumbers(getFilteredRows());
+  renderAll();
 });
 document.getElementById('f-compare-mode').addEventListener('change', (e) => {
   filterState.compareMode = e.target.value;
   updateCompareControlsVisibility();
-  renderBigNumbers(getFilteredRows());
+  renderAll();
 });
 document.getElementById('f-compare-from').addEventListener('change', (e) => {
   filterState.compareCustomFrom = e.target.value || null;
-  renderBigNumbers(getFilteredRows());
+  renderAll();
 });
 document.getElementById('f-compare-to').addEventListener('change', (e) => {
   filterState.compareCustomTo = e.target.value || null;
-  renderBigNumbers(getFilteredRows());
+  renderAll();
 });
 
 async function init() {

@@ -50,7 +50,13 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
   hacía incómodo. Se enfoca solo al abrir el dropdown y se resetea al reabrir; "All"/"Clear"
   siempre operan sobre la lista completa, no sobre lo que está filtrado por el buscador.
 - Comparación de períodos: checkbox "Compare" + modo "Previous period" o "Custom range"
-  (con 2 date pickers propios). Deltas por tile con color según si subir es bueno o malo.
+  (con 2 date pickers propios). Deltas con color según si subir es bueno o malo. Aplica a
+  **Big Numbers, la tabla Performance per y la tabla Creative Performance** (extendido 2026-08-21):
+  cada celda numérica muestra su valor y debajo el delta % vs el período de comparación, matcheado
+  por entidad (Performance per) / por ad (Creative Performance). Helpers compartidos:
+  `getCompareRange()`, `cellDeltaHtml()`, `metricCell()`, `METRIC_DIRECTION` (dirección good/bad
+  por métrica). Los handlers de Compare llaman `renderAll()` (no solo Big Numbers) para refrescar
+  las tablas. Ad/entidad nueva en el período actual muestra "new"; Bounce Rate sin sesiones "—" sin delta.
 - **Dark mode manual**: checkbox "Dark mode" en los filtros pisa `prefers-color-scheme`
   vía atributo `data-theme` en `<html>` (`:root[data-theme="dark"]`/`="light"` con mayor
   especificidad que la media query), persistido en `localStorage` (`ssw-dashboard-theme`).
