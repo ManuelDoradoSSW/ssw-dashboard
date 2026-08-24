@@ -117,7 +117,11 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
   barra de filtros sticky).
 - Funnel: Impressions → Clicks → LP Views → Registrations (all MQLs, de iClosed) → Real MQL
   → **Booked** (paso agregado 2026-08-19, en verde `--series-2` para distinguirlo del gradiente
-  violeta; Booked ⊆ Real MQL así que el funnel sigue monotónico).
+  violeta; Booked ⊆ Real MQL así que el funnel sigue monotónico). **El largo de barra es
+  LOGARÍTMICO** (`log10`), no lineal (2026-08-21): el rango va de ~136k impresiones a ~12 bookings,
+  y en lineal MQL/Booked quedaban slivers invisibles -- con log cada etapa se ve y sigue
+  angostando. Barras centradas (`margin:0 auto`) para el look de embudo. Los conteos y el % de
+  conversión al costado son los valores exactos; hay un caveat visible que aclara la escala log.
 - **Qualified MQL**: `iClosed_Raw` pasó a 7 columnas (se agregó `Lead Score` como columna G,
   2026-08-06) — "Quality"/"High Quality"/similar = qualified, vacío o "Low Quality" no
   cuenta (ver §5 para el detalle exacto de la regla). Métrica independiente de Real MQL,
