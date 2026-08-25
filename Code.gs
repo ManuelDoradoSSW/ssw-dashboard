@@ -546,7 +546,9 @@ function runIClosedAuto(since, until) {
       var id = String(c.id);
       var detail = fetchIClosedDetail(c.id, apiKey);
       var utm = parseUtmFromUrl(detail.referrerUrl);
-      var eventName = fetchIClosedEventNames(c.id, apiKey);
+      // Event = los events (calls) asociados al contacto, de ContactEvents del item de lista. Es
+      // persistente y lista TODAS las calls (Call A/B). /v1/eventCalls traía muy pocas (bug).
+      var eventName = contactEventNames(c.ContactEvents);
       var status = c.status || detail.status || '';
       var prev = byId[id];
 
@@ -659,17 +661,12 @@ function fetchIClosedDetail(contactId, apiKey) {
   };
 }
 
-// Nombres de las call(s) agendadas del contacto (Event). Varias -> separadas por coma, igual
-// que el export manual (ej. "SSW Assessment Call B, SSW Assessment Call A").
-function fetchIClosedEventNames(contactId, apiKey) {
-  var url = ICLOSED_BASE_URL + '/v1/eventCalls?contactId=' + contactId + '&eventType=ALL&limit=100&page=0';
-  var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-  var json = JSON.parse(resp.getContentText());
-  var calls = (json.data && json.data.eventCalls) || [];
+// Nombres de las call(s) del contacto (columna Event), a partir de ContactEvents (item de lista
+// de /v1/contacts). Varias -> separadas por coma, igual que el export manual.
+function contactEventNames(contactEvents) {
   var names = [];
-  calls.forEach(function (ec) {
-    var n = ec.event && ec.event.name;
-    if (n && names.indexOf(n) === -1) names.push(n);
+  (contactEvents || []).forEach(function (e) {
+    if (e && e.name && names.indexOf(e.name) === -1) names.push(e.name);
   });
   return names.join(', ');
 }
