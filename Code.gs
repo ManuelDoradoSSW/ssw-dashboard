@@ -598,6 +598,25 @@ function fetchIClosedContactsList(since, until, apiKey) {
   return all;
 }
 
+// Diagnóstico de AUTH: /v1/contacts dio 401 "Invalid API key". Esto pega a varios endpoints con
+// la MISMA key para ver si el 401 es de toda la key (vencida/rota) o solo de contacts (scope).
+// NO expone la key en el log (solo largo y si tiene espacios de más). Correr y pegar el log.
+function debugIClosedAuth() {
+  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
+  Logger.log('key present=' + (!!apiKey) + ' length=' + (apiKey ? apiKey.length : 0)
+    + ' trimmedDiff=' + (apiKey ? (apiKey.length - apiKey.trim().length) : 0));
+  var eps = [
+    '/v1/eventCalls?eventType=PAST&dateFrom=' + daysAgo(14) + '&dateTo=' + daysAgo(0) + '&limit=2&page=0&orderColumn=dateTime&orderBy=desc',
+    '/v1/contacts?limit=2',
+    '/v1/users?limit=2',
+    '/v1/deals?limit=2'
+  ];
+  eps.forEach(function (ep) {
+    var resp = UrlFetchApp.fetch(ICLOSED_BASE_URL + ep, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
+    Logger.log(ep.split('?')[0] + '  ->  HTTP ' + resp.getResponseCode() + '  |  ' + resp.getContentText().substring(0, 160));
+  });
+}
+
 // Diagnóstico: por qué /v1/contacts devolvió 0. Prueba varias formas del filtro de tiempo en una
 // sola corrida y loguea el count de cada una. Correr desde el editor y pegar el log.
 function debugIClosedContactsList() {
