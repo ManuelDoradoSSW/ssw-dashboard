@@ -325,6 +325,10 @@ var ICLOSED_AUTO_SHEET = 'iClosed_Auto';
 // algún día se lo repunta a esta tab, ignora la col J (lee hasta la I).
 var ICLOSED_AUTO_HEADERS = ['Date', 'Account', 'Campaign', 'Ad Set', 'Ad', 'Real MQL', 'Lead Score', 'Scheduling status', 'Event', 'Contact ID'];
 var ICLOSED_AUTO_WINDOW_DAYS = 14; // ventana (por joinedTime) que se re-sincroniza cada corrida; es MERGE, no reemplazo
+// Fecha de corte: la API es la fuente DESDE acá en adelante. Debe coincidir con ICLOSED_CUTOVER del
+// dashboard (index.html). El sync nunca procesa contactos creados antes -> el histórico queda 100%
+// en iClosed_Raw (manual). Poné el día después de tu último pegado manual.
+var ICLOSED_AUTO_CUTOVER = '2026-08-26';
 
 function syncIClosed() {
   var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
@@ -509,7 +513,18 @@ function debugIClosedContactDetail(contactId) {
 
 // Corrida diaria (una vez validado). NO está en createTriggers todavía a propósito.
 function syncIClosedAuto() {
-  runIClosedAuto(daysAgo(ICLOSED_AUTO_WINDOW_DAYS), daysAgo(0));
+  var since = daysAgo(ICLOSED_AUTO_WINDOW_DAYS);
+  if (since < ICLOSED_AUTO_CUTOVER) since = ICLOSED_AUTO_CUTOVER; // nunca antes del corte
+  runIClosedAuto(since, daysAgo(0));
+}
+
+// Agrega SOLO el trigger diario de syncIClosedAuto (~5am), sin tocar los otros. Correr una vez,
+// después de validar. NO usar createTriggers (ese re-arma el syncIClosed viejo, roto).
+function createIClosedAutoTrigger() {
+  var exists = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'syncIClosedAuto'; });
+  if (exists) { Logger.log('El trigger de syncIClosedAuto ya existe.'); return; }
+  ScriptApp.newTrigger('syncIClosedAuto').timeBased().everyDays(1).atHour(5).create();
+  Logger.log('Trigger de syncIClosedAuto creado (diario ~5am).');
 }
 
 // Para el test de validación: llena iClosed_Auto desde una fecha dada hasta hoy, mes por mes

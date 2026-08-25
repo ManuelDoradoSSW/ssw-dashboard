@@ -641,6 +641,11 @@
 <script>
 // ===================== CONFIG =====================
 const SHEET_ID = '1uBEyQS2yW-RncHIHVOSb90ulAO6zmyDntgHXZ4gyVcg';
+// Fecha de corte iClosed (por Contact Creation Date): contactos ANTES de esta fecha salen de la
+// tab manual iClosed_Raw (histórico ya capturado), DESDE esta fecha en adelante salen de la tab
+// iClosed_Auto (API). Partición limpia por fecha -> sin solapamiento ni doble conteo.
+// >>> Poné acá el día a partir del cual la API es la fuente (el día después de tu último pegado manual).
+const ICLOSED_CUTOVER = '2026-08-26';
 const METRIC_OPTIONS = [
   { key: 'spend', label: 'Spend', fmt: 'money' },
   { key: 'ctr', label: 'CTR', fmt: 'pct' },
@@ -794,14 +799,28 @@ function loadCreativeThumbs(table) {
 
 // ===================== LOAD + MERGE =====================
 
+// filas de contactos de la tab iClosed_Auto (API). Igual que Creatives: si esa tab no existe gviz
+// devuelve la 1ra tab (Meta_Raw), así que se valida por header (col 'Contact ID' / 'Scheduling status',
+// que Meta_Raw no tiene) antes de usarla. Devuelve [] si no es iClosed_Auto o no existe.
+function autoContactRows(table) {
+  if (!table || !table.cols) return [];
+  const labels = table.cols.map(c => (c && c.label) ? String(c.label).trim() : '');
+  let ok = labels.indexOf('Contact ID') !== -1 || labels.indexOf('Scheduling status') !== -1;
+  if (!ok && table.rows && table.rows[0] && table.rows[0].c) {
+    const first = table.rows[0].c.map(cellStr);
+    ok = first.indexOf('Contact ID') !== -1 || first.indexOf('Scheduling status') !== -1;
+  }
+  return ok ? dataRows(table) : [];
+}
+
 async function loadAll() {
-  // Creatives puede no existir todavía (hasta que se corra syncCreatives en Apps Script);
-  // .catch para que un fallo ahí nunca rompa la carga del resto.
-  const [metaTable, phTable, icTable, creativesTable] = await Promise.all([
+  // Creatives / iClosed_Auto pueden no existir todavía; .catch para que un fallo ahí no rompa el resto.
+  const [metaTable, phTable, icTable, creativesTable, icAutoTable] = await Promise.all([
     fetchSheetTab('Meta_Raw'),
     fetchSheetTab('PostHog_Raw'),
     fetchSheetTab('iClosed_Raw'),
-    fetchSheetTab('Creatives').catch(() => null)
+    fetchSheetTab('Creatives').catch(() => null),
+    fetchSheetTab('iClosed_Auto').catch(() => null)
   ]);
 
   loadCreativeThumbs(creativesTable);
@@ -829,7 +848,13 @@ async function loadAll() {
   const campaignToAccount = new Map();
   metaRows.forEach(r => { if (!campaignToAccount.has(r.campaign)) campaignToAccount.set(r.campaign, r.account); });
 
-  const icRows = dataRows(icTable).flatMap((r, icRowId) => {
+  // Fuente de contactos = manual (< corte) + API (>= corte), particionado por Contact Creation Date.
+  // Cada fila es UN contacto; los dos sets no se solapan por construcción, así que no hay doble conteo.
+  const icManual = dataRows(icTable).filter(r => cellDate(r.c[0]) < ICLOSED_CUTOVER);
+  const icAuto = autoContactRows(icAutoTable).filter(r => cellDate(r.c[0]) >= ICLOSED_CUTOVER);
+  const icSourceRows = icManual.concat(icAuto);
+
+  const icRows = icSourceRows.flatMap((r, icRowId) => {
     const date = cellDate(r.c[0]);
     const icAccount = cellStr(r.c[1]);
     // campaign/adset/ad vienen como listas separadas por coma en contactos multi-touch, alineadas
