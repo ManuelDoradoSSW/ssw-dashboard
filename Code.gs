@@ -598,6 +598,32 @@ function fetchIClosedContactsList(since, until, apiKey) {
   return all;
 }
 
+// Diagnóstico: por qué /v1/contacts devolvió 0. Prueba varias formas del filtro de tiempo en una
+// sola corrida y loguea el count de cada una. Correr desde el editor y pegar el log.
+function debugIClosedContactsList() {
+  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
+  if (!apiKey) throw new Error('Falta ICLOSED_API_KEY en Script Properties');
+  var base = ICLOSED_BASE_URL + '/v1/contacts';
+  var tries = [
+    '?limit=3',
+    '?limit=3&orderColumn=joinedTime&orderBy=desc',
+    '?limit=3&timeFrom=2026-07-01&timeTo=2026-08-25',
+    '?limit=3&timeFrom=2026-07-01T00:00:00Z&timeTo=2026-08-25T23:59:59Z',
+    '?limit=3&timeFrom=2026-07-01T00:00:00.000Z&timeTo=2026-08-25T23:59:59.999Z'
+  ];
+  tries.forEach(function (qs) {
+    var resp = UrlFetchApp.fetch(base + qs, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
+    var code = resp.getResponseCode();
+    var txt = resp.getContentText();
+    var json = {}; try { json = JSON.parse(txt); } catch (e) {}
+    var count = json.data && json.data.count;
+    var contacts = (json.data && json.data.contacts) || [];
+    Logger.log(qs + '  ->  HTTP ' + code + '  count=' + count + '  returned=' + contacts.length);
+    if (contacts.length) Logger.log('   first: ' + JSON.stringify(contacts[0]).substring(0, 500));
+    else Logger.log('   body: ' + txt.substring(0, 300));
+  });
+}
+
 function fetchIClosedDetail(contactId, apiKey) {
   var url = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId;
   var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
