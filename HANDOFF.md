@@ -414,8 +414,35 @@ la automatización en curso -- ver §7).
 
 ## 7. Próximos pasos
 
-**Automatización de `iClosed_Raw`: EN CURSO, el diseño actual de `syncIClosed()` está ROTO,
-no confiar en él ni activar el trigger.** Se escribió una primera versión basada en
+**ACTUALIZACIÓN 2026-08-21 — automatización de iClosed reescrita y EN VALIDACIÓN (tab aparte).**
+Se descartó el `syncIClosed()` viejo (basado en `/v1/eventCalls`, roto). El nuevo enfoque está en
+`Code.gs` como `syncIClosedAuto()` / `backfillIClosedAuto()` / `runIClosedAuto()` y **escribe a una
+tab NUEVA `iClosed_Auto` (NO a `iClosed_Raw`)** para comparar contra el pegado manual antes de migrar.
+Diseño confirmado con el usuario:
+- Fuente: `/v1/contacts` filtrado por `joinedTime` (= "Contact Creation Date" del export manual) →
+  por cada contacto `/v1/contacts/detail` (joinedTime + `referrerUrl` para utm single-touch + custom
+  fields `real-mql`/`lead-score`) + `/v1/eventCalls?contactId=` (nombre de Call A/B = columna Event).
+- **"Scheduling status" = el campo `status` del contacto** (enum confirmado en la spec:
+  POTENTIAL/QUALIFIED/DISQUALIFIED/STRATEGY_CALL_BOOKED/DISCOVERY_CALL_BOOKED). "Event" = `event.name`
+  de eventCalls. Real MQL/Lead Score = custom fields del detail.
+- **Merge por Contact ID** (col J nueva en la tab), NO reemplazo de ventana: Date/utm se fijan una
+  vez; Real MQL/Lead Score toman siempre el último (lag ~1 día); **status+Event se congelan apenas
+  llegan a un `*_CALL_BOOKED`** para que un show/DQ posterior no borre el booking (regla explícita del
+  usuario: "no sobreescribir el status una vez que está en discovery").
+- Multi-touch: la API solo da `referrerUrl` (un touch) → se acepta perder el ~14% multi-touch (el
+  usuario lo confirmó). No hay export programado en iClosed (el usuario verificó), por eso vía API.
+- **Estado**: falta que el usuario corra `backfillIClosedAuto('<fecha>')`, compare `iClosed_Auto`
+  vs `iClosed_Raw` sobre una ventana conocida, y AHÍ se decide migrar (repuntar el dashboard de
+  `iClosed_Raw` a `iClosed_Auto`, que ignora la col J). NO activar trigger hasta que cierre. Ojo con:
+  (a) formato de utm en `referrerUrl` (puede venir percent-encoded vs el "+"-encoded del manual --
+  `parseUtmFromUrl` lo deja crudo, ver si el crosscheck lo resuelve igual); (b) `joinedTime` es UTC,
+  el manual puede estar en TZ de la cuenta (posible off-by-one-day); (c) tiempo de ejecución en
+  backfills largos (por eso `backfillIClosedAuto` va mes a mes y es idempotente).
+
+--- (histórico, del intento viejo, dejado como referencia) ---
+
+**Automatización de `iClosed_Raw`: el diseño VIEJO de `syncIClosed()` estaba ROTO,
+no confiar en él ni activar su trigger.** Se escribió una primera versión basada en
 `/v1/eventCalls` (commit `d46a8c1`) que el usuario corrió -- trajo **17 filas de 23 calls**
 para una ventana donde el export manual (que el usuario compartió, un .xlsx real descargado
 de iClosed llamado "Global Data - contacts") tiene **29 contactos de Meta genuinos**. No es

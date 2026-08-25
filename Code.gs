@@ -319,6 +319,13 @@ function findAction(actions, preferredTypes) {
 // Authorization: Bearer <API key completa, ya incluye su propio prefijo>.
 var ICLOSED_BASE_URL = 'https://public.api.iclosed.io';
 
+// --- Sync automático NUEVO (2026-08-21), escribe a una tab APARTE para validar antes de migrar ---
+var ICLOSED_AUTO_SHEET = 'iClosed_Auto';
+// mismas 9 columnas que iClosed_Raw + Contact ID (col J) como llave de merge. El dashboard, si
+// algún día se lo repunta a esta tab, ignora la col J (lee hasta la I).
+var ICLOSED_AUTO_HEADERS = ['Date', 'Account', 'Campaign', 'Ad Set', 'Ad', 'Real MQL', 'Lead Score', 'Scheduling status', 'Event', 'Contact ID'];
+var ICLOSED_AUTO_WINDOW_DAYS = 14; // ventana (por joinedTime) que se re-sincroniza cada corrida; es MERGE, no reemplazo
+
 function syncIClosed() {
   var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
   if (!apiKey) throw new Error('Falta ICLOSED_API_KEY en Script Properties');
@@ -485,6 +492,173 @@ function debugIClosedContactDetail(contactId) {
   });
   Logger.log('STATUS ' + resp.getResponseCode());
   Logger.log(resp.getContentText());
+}
+
+// ===================== ICLOSED AUTO (API -> tab aparte, para validar) =====================
+// Reemplaza el pegado manual del export "Global Data / All Contacts". Escribe a iClosed_Auto
+// (NO a iClosed_Raw) para comparar contra la tab manual antes de migrar. Fuente correcta =
+// /v1/contacts (por joinedTime = Contact Creation Date), + /v1/contacts/detail (utm via
+// referrerUrl single-touch + Real MQL/Lead Score) + /v1/eventCalls?contactId (nombre de Call A/B).
+//
+// MERGE por Contact ID con reglas confirmadas con el usuario:
+//  - Date / Campaign / Ad Set / Ad (utm): se fijan una vez (origen, no cambian).
+//  - Real MQL / Lead Score: SIEMPRE el último valor (se completan post-call, con ~1 día de lag).
+//  - Scheduling status + Event: se actualizan mientras el status sea pre-booking; se CONGELAN
+//    apenas llega a un *_CALL_BOOKED, para que un show/DQ posterior no borre el booking.
+//  - Multi-touch: la API solo da referrerUrl (un touch), así que se acepta perder el ~14% multi-touch.
+
+// Corrida diaria (una vez validado). NO está en createTriggers todavía a propósito.
+function syncIClosedAuto() {
+  runIClosedAuto(daysAgo(ICLOSED_AUTO_WINDOW_DAYS), daysAgo(0));
+}
+
+// Para el test de validación: llena iClosed_Auto desde una fecha dada hasta hoy, mes por mes
+// (idempotente: re-correr mergea de nuevo, no duplica). Ej: backfillIClosedAuto('2026-06-01')
+function backfillIClosedAuto(sinceStr) {
+  var since = sinceStr || daysAgo(30);
+  var until = daysAgo(0);
+  monthChunks(since, until).forEach(function (chunk) {
+    try {
+      runIClosedAuto(chunk.since, chunk.until);
+    } catch (e) {
+      Logger.log('iClosed_Auto backfill ' + chunk.since + '..' + chunk.until + ' FALLO, sigo: ' + e.message);
+    }
+    Utilities.sleep(1000);
+  });
+  Logger.log('backfillIClosedAuto listo desde ' + since);
+}
+
+function runIClosedAuto(since, until) {
+  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
+  if (!apiKey) throw new Error('Falta ICLOSED_API_KEY en Script Properties');
+
+  var contacts = fetchIClosedContactsList(since, until, apiKey);
+  Logger.log('iClosed_Auto ' + since + '..' + until + ': ' + contacts.length + ' contactos');
+
+  // merge: leer lo que ya hay en iClosed_Auto, indexado por Contact ID
+  var byId = {};
+  readSheetAsObjects(ICLOSED_AUTO_SHEET, ICLOSED_AUTO_HEADERS).forEach(function (row) {
+    byId[String(row['Contact ID'])] = row;
+  });
+
+  contacts.forEach(function (c) {
+    try {
+      var id = String(c.id);
+      var detail = fetchIClosedDetail(c.id, apiKey);
+      var utm = parseUtmFromUrl(detail.referrerUrl);
+      var eventName = fetchIClosedEventNames(c.id, apiKey);
+      var status = c.status || detail.status || '';
+      var prev = byId[id];
+
+      if (!prev) {
+        byId[id] = {
+          'Date': (detail.joinedTime || '').substring(0, 10),
+          'Account': '',
+          'Campaign': utm.campaign, 'Ad Set': utm.medium, 'Ad': utm.content,
+          'Real MQL': detail.realMql, 'Lead Score': detail.leadScore,
+          'Scheduling status': status, 'Event': eventName, 'Contact ID': id
+        };
+      } else {
+        prev['Real MQL'] = detail.realMql;   // siempre el último
+        prev['Lead Score'] = detail.leadScore;
+        var frozen = prev['Scheduling status'] === 'DISCOVERY_CALL_BOOKED' || prev['Scheduling status'] === 'STRATEGY_CALL_BOOKED';
+        if (!frozen) { prev['Scheduling status'] = status; prev['Event'] = eventName; }
+        // Date / utm: no se tocan (se fijaron al crear la fila)
+      }
+    } catch (e) {
+      Logger.log('iClosed_Auto contacto ' + c.id + ' FALLO, sigo: ' + e.message);
+    }
+  });
+
+  var rows = Object.keys(byId).map(function (id) {
+    var r = byId[id];
+    return ICLOSED_AUTO_HEADERS.map(function (h) { return r[h] != null ? r[h] : ''; });
+  });
+  writeWholeSheet(ICLOSED_AUTO_SHEET, ICLOSED_AUTO_HEADERS, rows);
+  Logger.log('iClosed_Auto: ' + rows.length + ' filas totales (merge).');
+}
+
+// /v1/contacts filtrado por joinedTime (= Contact Creation Date del export manual). El item de
+// lista trae id + status; joinedTime/utm/custom fields se piden con /detail por contacto.
+function fetchIClosedContactsList(since, until, apiKey) {
+  var all = [], limit = 100, page = 0;
+  while (true) {
+    var url = ICLOSED_BASE_URL + '/v1/contacts'
+      + '?timeFrom=' + encodeURIComponent(since) + '&timeTo=' + encodeURIComponent(until)
+      + '&limit=' + limit + '&page=' + page + '&orderColumn=joinedTime&orderBy=asc';
+    var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
+    var json = JSON.parse(resp.getContentText());
+    if (json.error) throw new Error('iClosed contacts: ' + JSON.stringify(json.error));
+    var list = (json.data && json.data.contacts) || [];
+    all = all.concat(list);
+    var total = (json.data && json.data.count) || 0;
+    page++;
+    if (list.length === 0 || page * limit >= total) break;
+  }
+  return all;
+}
+
+function fetchIClosedDetail(contactId, apiKey) {
+  var url = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId;
+  var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
+  var json = JSON.parse(resp.getContentText());
+  var d = (json && json.data) || {};
+  var assoc = d.CustomFieldAssociation || [];
+  return {
+    joinedTime: d.joinedTime || d.createdAt || '',
+    referrerUrl: d.referrerUrl || '',
+    status: d.status || '',
+    realMql: findCustomFieldAnswer(assoc, 'real-mql'),
+    leadScore: findCustomFieldAnswer(assoc, 'lead-score')
+  };
+}
+
+// Nombres de las call(s) agendadas del contacto (Event). Varias -> separadas por coma, igual
+// que el export manual (ej. "SSW Assessment Call B, SSW Assessment Call A").
+function fetchIClosedEventNames(contactId, apiKey) {
+  var url = ICLOSED_BASE_URL + '/v1/eventCalls?contactId=' + contactId + '&eventType=ALL&limit=100&page=0';
+  var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
+  var json = JSON.parse(resp.getContentText());
+  var calls = (json.data && json.data.eventCalls) || [];
+  var names = [];
+  calls.forEach(function (ec) {
+    var n = ec.event && ec.event.name;
+    if (n && names.indexOf(n) === -1) names.push(n);
+  });
+  return names.join(', ');
+}
+
+// Extrae utm_campaign/medium/content del query string, SIN decodificar (deja el "+" tal cual,
+// mismo formato que el export manual, así el crosscheck del dashboard lo resuelve igual).
+function parseUtmFromUrl(url) {
+  var out = { campaign: '', medium: '', content: '' };
+  if (!url) return out;
+  var q = url.indexOf('?');
+  if (q === -1) return out;
+  url.substring(q + 1).split('&').forEach(function (pair) {
+    var eq = pair.indexOf('=');
+    var k = eq === -1 ? pair : pair.substring(0, eq);
+    var v = eq === -1 ? '' : pair.substring(eq + 1);
+    if (k === 'utm_campaign') out.campaign = v;
+    else if (k === 'utm_medium') out.medium = v;
+    else if (k === 'utm_content') out.content = v;
+  });
+  return out;
+}
+
+function readSheetAsObjects(sheetName, headers) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return [];
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  var data = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  var idIdx = headers.length - 1; // Contact ID es la última columna
+  return data.filter(function (row) { return row[idIdx] !== '' && row[idIdx] != null; }).map(function (row) {
+    var obj = {};
+    headers.forEach(function (h, i) { obj[h] = row[i]; });
+    return obj;
+  });
 }
 
 // ===================== POSTHOG =====================
