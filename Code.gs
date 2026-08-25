@@ -583,8 +583,9 @@ function runIClosedAuto(since, until) {
 function fetchIClosedContactsList(since, until, apiKey) {
   var all = [], limit = 100, page = 0;
   while (true) {
+    // timeFrom/timeTo requieren datetime ISO completo (fecha sola devuelve 0). Se cubre el día entero.
     var url = ICLOSED_BASE_URL + '/v1/contacts'
-      + '?timeFrom=' + encodeURIComponent(since) + '&timeTo=' + encodeURIComponent(until)
+      + '?timeFrom=' + encodeURIComponent(since + 'T00:00:00Z') + '&timeTo=' + encodeURIComponent(until + 'T23:59:59Z')
       + '&limit=' + limit + '&page=' + page + '&orderColumn=joinedTime&orderBy=asc';
     var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
     var json = JSON.parse(resp.getContentText());
