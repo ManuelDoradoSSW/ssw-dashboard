@@ -930,7 +930,13 @@ function buildNameCrosscheck(names) {
 function resolveByCrosscheck(rawValue, crosscheck) {
   if (crosscheck.raw.has(rawValue)) return rawValue;
   if (crosscheck.encoded.has(rawValue)) return crosscheck.encoded.get(rawValue);
-  return decodePlusEncoded(rawValue);
+  // Los UTM de la API (iClosed_Auto) vienen form-urlencoded (%2B, %7C, "+"=espacio), distinto del
+  // manual (solo "+" por espacio). decodePlusEncoded los lleva al nombre real -> se re-chequea
+  // contra los nombres de Meta para matchear igual que el manual.
+  const decoded = decodePlusEncoded(rawValue);
+  if (crosscheck.raw.has(decoded)) return decoded;
+  if (crosscheck.encoded.has(decoded)) return crosscheck.encoded.get(decoded);
+  return decoded;
 }
 
 function buildAdCrosscheck(metaRows) {

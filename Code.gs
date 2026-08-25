@@ -686,8 +686,10 @@ function contactEventNames(contactEvents) {
   return names.join(', ');
 }
 
-// Extrae utm_campaign/medium/content del query string, SIN decodificar (deja el "+" tal cual,
-// mismo formato que el export manual, así el crosscheck del dashboard lo resuelve igual).
+// Extrae utm_campaign/medium/content del query string y los DECODIFICA al nombre real. El
+// referrerUrl viene form-urlencoded: espacio -> "+", chars especiales -> %xx (incluido el "+"
+// literal como %2B). Se decodifica a "SSW_ADV+_..._OLD ACCOUNT..." (con "+" y espacio reales),
+// que matchea directo los nombres de Meta_Raw. (Antes se guardaba crudo y no matcheaba.)
 function parseUtmFromUrl(url) {
   var out = { campaign: '', medium: '', content: '' };
   if (!url) return out;
@@ -697,11 +699,17 @@ function parseUtmFromUrl(url) {
     var eq = pair.indexOf('=');
     var k = eq === -1 ? pair : pair.substring(0, eq);
     var v = eq === -1 ? '' : pair.substring(eq + 1);
-    if (k === 'utm_campaign') out.campaign = v;
-    else if (k === 'utm_medium') out.medium = v;
-    else if (k === 'utm_content') out.content = v;
+    if (k === 'utm_campaign') out.campaign = decodeUtmValue(v);
+    else if (k === 'utm_medium') out.medium = decodeUtmValue(v);
+    else if (k === 'utm_content') out.content = decodeUtmValue(v);
   });
   return out;
+}
+
+// "+" siempre es espacio (el "+" literal viene como %2B); después decodeURIComponent resuelve %xx.
+function decodeUtmValue(v) {
+  if (!v) return '';
+  try { return decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) { return v.replace(/\+/g, ' '); }
 }
 
 function readSheetAsObjects(sheetName, headers) {
