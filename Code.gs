@@ -328,7 +328,7 @@ var ICLOSED_AUTO_WINDOW_DAYS = 14; // ventana (por joinedTime) que se re-sincron
 // Fecha de corte: la API es la fuente DESDE acá en adelante. Debe coincidir con ICLOSED_CUTOVER del
 // dashboard (index.html). El sync nunca procesa contactos creados antes -> el histórico queda 100%
 // en iClosed_Raw (manual). Poné el día después de tu último pegado manual.
-var ICLOSED_AUTO_CUTOVER = '2026-08-26';
+var ICLOSED_AUTO_CUTOVER = '2026-08-25';
 
 function syncIClosed() {
   var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
