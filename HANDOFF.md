@@ -42,7 +42,7 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
   Performance (tabla), Creative Table — Choose your Metrics (scatter), Funnel view.
 - Filtros: barra de filtros **sticky** (`position: sticky; top: 0` en `#filters-card`,
   queda fija arriba al scrollear). Rango de fechas por **presets** (`#f-date-preset`):
-  Last 7 days / Last 30 days / This Month / Last Month / Year to date / Custom (los
+  Today / Yesterday / Last 7 days / Last 14 days / Last 30 days / This Month / Last Month / Year to date / Custom (los
   date pickers "From"/"To" solo se muestran con Custom). Account/Campaign/Ad Set
   (multi-select con checkboxes, cascada entre sí). Cada multi-select tiene un **buscador**
   (`buildMultiSelect()`, campo `.msel-search`) que filtra la lista en vivo mientras se
