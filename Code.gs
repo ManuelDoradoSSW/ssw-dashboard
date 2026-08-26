@@ -10,6 +10,8 @@ var META_ACCOUNTS = [
 
 var META_SHEET = 'Meta_Raw';
 var POSTHOG_SHEET = 'PostHog_Raw';
+// Solo lo usaba el syncIClosed deprecado (ver más abajo). La tab histórica real ahora se llama
+// iClosed_historical_donotchange y NO la escribe ningún sync -- es manual, congelada.
 var ICLOSED_SHEET = 'iClosed_Raw';
 
 var META_HEADERS = ['Date', 'Account', 'Campaign', 'Ad Set', 'Ad', 'Spend', 'Impressions',
@@ -25,14 +27,16 @@ function runDailySync() {
   syncMeta();
   syncPostHog();
   syncCreatives();
-  syncIClosed();
+  syncIClosedAuto();
 }
 
 function createTriggers() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('syncMeta').timeBased().everyDays(1).atHour(3).create();
   ScriptApp.newTrigger('syncPostHog').timeBased().everyDays(1).atHour(4).create();
-  ScriptApp.newTrigger('syncIClosed').timeBased().everyDays(1).atHour(5).create();
+  ScriptApp.newTrigger('syncCreatives').timeBased().everyDays(1).atHour(2).create();
+  ScriptApp.newTrigger('syncIClosedAuto').timeBased().everyDays(1).atHour(5).create();
+  // OJO: ya NO se arma syncIClosed (deprecado, escribía a la tab histórica). Ver syncIClosed().
 }
 
 // Agrega SOLO el trigger diario de syncCreatives, sin tocar los otros (a diferencia de
@@ -321,16 +325,23 @@ var ICLOSED_BASE_URL = 'https://public.api.iclosed.io';
 
 // --- Sync automático NUEVO (2026-08-21), escribe a una tab APARTE para validar antes de migrar ---
 var ICLOSED_AUTO_SHEET = 'iClosed_Auto';
-// mismas 9 columnas que iClosed_Raw + Contact ID (col J) como llave de merge. El dashboard, si
-// algún día se lo repunta a esta tab, ignora la col J (lee hasta la I).
+// mismas 9 columnas que la tab histórica + Contact ID (col J) como llave de merge. El dashboard
+// ignora la col J (lee hasta la I).
 var ICLOSED_AUTO_HEADERS = ['Date', 'Account', 'Campaign', 'Ad Set', 'Ad', 'Real MQL', 'Lead Score', 'Scheduling status', 'Event', 'Contact ID'];
 var ICLOSED_AUTO_WINDOW_DAYS = 14; // ventana (por joinedTime) que se re-sincroniza cada corrida; es MERGE, no reemplazo
 // Fecha de corte: la API es la fuente DESDE acá en adelante. Debe coincidir con ICLOSED_CUTOVER del
 // dashboard (index.html). El sync nunca procesa contactos creados antes -> el histórico queda 100%
-// en iClosed_Raw (manual). Poné el día después de tu último pegado manual.
+// en la tab histórica (manual). Poné el día después de tu último pegado manual.
 var ICLOSED_AUTO_CUTOVER = '2026-08-25';
 
+// DEPRECADO: este sync (basado en /v1/eventCalls) quedó obsoleto y escribía a la vieja tab manual.
+// La tab histórica ahora se llama iClosed_historical_donotchange y NO la escribe nadie. El sync real
+// es syncIClosedAuto (escribe a iClosed_Auto). Se deja el guard para que no pueda correr por error.
 function syncIClosed() {
+  throw new Error('syncIClosed está deprecado. Usá syncIClosedAuto (escribe a iClosed_Auto). La tab histórica no se toca.');
+}
+
+function syncIClosed_DEPRECATED_impl() {
   var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
   if (!apiKey) throw new Error('Falta ICLOSED_API_KEY en Script Properties');
 
@@ -500,7 +511,8 @@ function debugIClosedContactDetail(contactId) {
 
 // ===================== ICLOSED AUTO (API -> tab aparte, para validar) =====================
 // Reemplaza el pegado manual del export "Global Data / All Contacts". Escribe a iClosed_Auto
-// (NO a iClosed_Raw) para comparar contra la tab manual antes de migrar. Fuente correcta =
+// (NO a la tab histórica). El dashboard particiona por fecha: histórico del manual, 25/8+ de acá.
+// Fuente correcta =
 // /v1/contacts (por joinedTime = Contact Creation Date), + /v1/contacts/detail (utm via
 // referrerUrl single-touch + Real MQL/Lead Score) + /v1/eventCalls?contactId (nombre de Call A/B).
 //

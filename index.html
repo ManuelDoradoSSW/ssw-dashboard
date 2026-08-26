@@ -327,7 +327,7 @@
   <div>
     <h1>SSW Account Dashboard — Meta Ads</h1>
     <p class="subtitle">SSW | 2026 · So Shall We USA · New Account SSW | 2026</p>
-    <p class="caveat">Source: Meta_Raw + PostHog_Raw + iClosed_Raw, joined by Ad Name. Reach/Frequency summed by day can slightly overestimate over long ranges (Meta deduplicates reach within a range, not day by day). Hold Rate not available yet.</p>
+    <p class="caveat">Source: Meta_Raw + PostHog_Raw + iClosed (historical + API), joined by Ad Name. Reach/Frequency summed by day can slightly overestimate over long ranges (Meta deduplicates reach within a range, not day by day). Hold Rate not available yet.</p>
     <p class="caveat">We started tracking Real MQL on June 14, 2026 -- rows before that date may show a Qualified lead score with Real MQL blank.</p>
   </div>
 </div>
@@ -399,7 +399,7 @@
   <p class="compare-range" id="compare-range-label"></p>
 </div>
 
-<div id="app-status" class="loading">Loading data from Meta_Raw, PostHog_Raw and iClosed_Raw…</div>
+<div id="app-status" class="loading">Loading data from Meta_Raw, PostHog_Raw and iClosed…</div>
 
 <div id="app-body" style="display:none;">
 
@@ -642,7 +642,7 @@
 // ===================== CONFIG =====================
 const SHEET_ID = '1uBEyQS2yW-RncHIHVOSb90ulAO6zmyDntgHXZ4gyVcg';
 // Fecha de corte iClosed (por Contact Creation Date): contactos ANTES de esta fecha salen de la
-// tab manual iClosed_Raw (histórico ya capturado), DESDE esta fecha en adelante salen de la tab
+// tab manual iClosed_historical_donotchange (histórico ya capturado), DESDE esta fecha en adelante salen de la tab
 // iClosed_Auto (API). Partición limpia por fecha -> sin solapamiento ni doble conteo.
 // >>> Poné acá el día a partir del cual la API es la fuente (el día después de tu último pegado manual).
 const ICLOSED_CUTOVER = '2026-08-25';
@@ -683,7 +683,7 @@ const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'reach', 'frequency', 'bounceR
 let UNIFIED = []; // flat rows at Date x Account x Campaign x AdSet x Ad grain
 let charts = {};
 let postHogStartDate = null; // primera fecha con sesiones de PostHog reales (ver caveat en Creative Performance)
-let ICLOSED_CONTACTS = []; // un elemento por contacto real de iClosed_Raw (deduplicado, no explotado por ad)
+let ICLOSED_CONTACTS = []; // un elemento por contacto real de iClosed (deduplicado, no explotado por ad)
 let CREATIVE_THUMBS = new Map(); // ad name -> thumbnail URL fresca (tab Creatives, refrescada a diario por Apps Script)
 
 // ===================== THEME =====================
@@ -799,6 +799,20 @@ function loadCreativeThumbs(table) {
 
 // ===================== LOAD + MERGE =====================
 
+// ¿esta tabla es realmente la de iClosed (y no Meta_Raw que gviz devuelve como fallback cuando la
+// tab no existe)? iClosed tiene columnas Real MQL / Lead Score / Scheduling status que Meta_Raw no.
+function looksLikeIClosed(table) {
+  if (!table || !table.cols) return false;
+  const marks = ['Real MQL', 'Lead Score', 'Scheduling status'];
+  const labels = table.cols.map(c => (c && c.label) ? String(c.label).trim() : '');
+  if (marks.some(m => labels.indexOf(m) !== -1)) return true;
+  if (table.rows && table.rows[0] && table.rows[0].c) {
+    const first = table.rows[0].c.map(cellStr);
+    if (marks.some(m => first.indexOf(m) !== -1)) return true;
+  }
+  return false;
+}
+
 // filas de contactos de la tab iClosed_Auto (API). Igual que Creatives: si esa tab no existe gviz
 // devuelve la 1ra tab (Meta_Raw), así que se valida por header (col 'Contact ID' / 'Scheduling status',
 // que Meta_Raw no tiene) antes de usarla. Devuelve [] si no es iClosed_Auto o no existe.
@@ -814,14 +828,21 @@ function autoContactRows(table) {
 }
 
 async function loadAll() {
-  // Creatives / iClosed_Auto pueden no existir todavía; .catch para que un fallo ahí no rompa el resto.
-  const [metaTable, phTable, icTable, creativesTable, icAutoTable] = await Promise.all([
+  // La tab histórica de iClosed puede llamarse iClosed_historical_donotchange (nombre nuevo) o
+  // iClosed_Raw (viejo). gviz, si una tab no existe, devuelve la 1ra tab (Meta_Raw), así que se
+  // piden los dos nombres y se elige la que REALMENTE es de iClosed (looksLikeIClosed), robusto
+  // a cuándo se renombre la tab. Creatives / iClosed_Auto pueden no existir todavía (.catch).
+  // Nombres candidatos para la tab histórica: nombre nuevo, nombre nuevo con espacio al final (por
+  // si quedó así al renombrar), y el viejo. Se prueban todos y se usa el que REALMENTE es iClosed.
+  const IC_HIST_NAMES = ['iClosed_historical_donotchange', 'iClosed_historical_donotchange ', 'iClosed_Raw'];
+  const [metaTable, phTable, creativesTable, icAutoTable, ...icHistTables] = await Promise.all([
     fetchSheetTab('Meta_Raw'),
     fetchSheetTab('PostHog_Raw'),
-    fetchSheetTab('iClosed_Raw'),
     fetchSheetTab('Creatives').catch(() => null),
-    fetchSheetTab('iClosed_Auto').catch(() => null)
+    fetchSheetTab('iClosed_Auto').catch(() => null),
+    ...IC_HIST_NAMES.map(n => fetchSheetTab(n).catch(() => null))
   ]);
+  const icTable = icHistTables.find(looksLikeIClosed) || null;
 
   loadCreativeThumbs(creativesTable);
 
@@ -850,7 +871,7 @@ async function loadAll() {
 
   // Fuente de contactos = manual (< corte) + API (>= corte), particionado por Contact Creation Date.
   // Cada fila es UN contacto; los dos sets no se solapan por construcción, así que no hay doble conteo.
-  const icManual = dataRows(icTable).filter(r => cellDate(r.c[0]) < ICLOSED_CUTOVER);
+  const icManual = (icTable ? dataRows(icTable) : []).filter(r => cellDate(r.c[0]) < ICLOSED_CUTOVER);
   const icAuto = autoContactRows(icAutoTable).filter(r => cellDate(r.c[0]) >= ICLOSED_CUTOVER);
   const icSourceRows = icManual.concat(icAuto);
 
@@ -879,7 +900,7 @@ async function loadAll() {
     const hasCallB = /\bCALL B\b/.test(eventUpper);
     const booked = mql === 'yes' && schedStatus === 'DISCOVERY CALL BOOKED' && hasCallA && !hasCallB;
     const ads = adCandidates.length ? adCandidates : ['(unattributed)'];
-    // icRowId identifica la fila ORIGINAL de iClosed_Raw (antes de explotar por ad) -- un contacto
+    // icRowId identifica la fila ORIGINAL de iClosed (antes de explotar por ad) -- un contacto
     // multi-touch genera varias filas acá (una por ad tocado) para que cada ad reciba su crédito en
     // la tabla de Creative Performance, pero sigue siendo UN solo contacto. Sin este id no hay forma
     // de distinguir "2 contactos distintos" de "1 contacto que tocó 2 ads" más adelante.
