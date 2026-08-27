@@ -673,6 +673,26 @@ function debugIClosedContactsList() {
   });
 }
 
+// Diagnóstico: un contacto que en iClosed tiene UTMs de Meta pero acá vino "orgánico" (sin UTMs).
+// Dumpea el referrerUrl (lo que uso hoy) Y el utm de sus eventCalls (posible fuente alternativa),
+// para ver de dónde saca iClosed los UTMs. Correr desde el editor (usa 4556654 por defecto).
+function debugIClosedUtms(contactId) {
+  contactId = contactId || 4556654;
+  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
+  if (!apiKey) throw new Error('Falta ICLOSED_API_KEY');
+  var d = UrlFetchApp.fetch(ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
+  var dj = JSON.parse(d.getContentText());
+  Logger.log('contactId ' + contactId);
+  Logger.log('  referrerUrl: ' + JSON.stringify(dj.data && dj.data.referrerUrl));
+  Logger.log('  ContactEvents: ' + JSON.stringify(dj.data && dj.data.ContactEvents));
+  var e = UrlFetchApp.fetch(ICLOSED_BASE_URL + '/v1/eventCalls?contactId=' + contactId + '&eventType=ALL&limit=10', { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
+  var calls = (JSON.parse(e.getContentText()).data || {}).eventCalls || [];
+  Logger.log('  eventCalls: ' + calls.length);
+  calls.forEach(function (c, i) {
+    Logger.log('   call[' + i + '] event=' + (c.event && c.event.name) + ' | utm=' + JSON.stringify(c.utm));
+  });
+}
+
 function fetchIClosedDetail(contactId, apiKey) {
   var url = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId;
   var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
