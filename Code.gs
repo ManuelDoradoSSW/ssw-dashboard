@@ -701,6 +701,23 @@ function debugIClosedUtms(contactId) {
   });
 }
 
+// Diagnóstico de fecha/TZ: 2 contactos aparecen el 27/8 en el sheet pero iClosed muestra 1.
+// Dumpea joinedTime/createdAt crudos + cómo caen en la TZ del spreadsheet, para ver si es un
+// tema de UTC vs TZ de la cuenta. Correr desde el editor.
+function debugIClosedJoined() {
+  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
+  var tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+  Logger.log('spreadsheet TZ: ' + tz);
+  [4562566, 4567867].forEach(function (cid) {
+    var r = UrlFetchApp.fetch(ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + cid, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
+    var d = (JSON.parse(r.getContentText()).data) || {};
+    Logger.log('cid ' + cid + ' | joinedTime=' + JSON.stringify(d.joinedTime) + ' | createdAt=' + JSON.stringify(d.createdAt) + ' | timeZone=' + JSON.stringify(d.timeZone));
+    try {
+      Logger.log('   -> UTC date=' + String(d.joinedTime).substring(0, 10) + ' | en TZ ' + tz + '=' + Utilities.formatDate(new Date(d.joinedTime), tz, 'yyyy-MM-dd HH:mm'));
+    } catch (e) { Logger.log('   parse error: ' + e.message); }
+  });
+}
+
 function fetchIClosedDetail(contactId, apiKey) {
   var url = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId;
   var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
