@@ -572,7 +572,10 @@ function runIClosedAuto(since, until) {
     try {
       var id = String(c.id);
       var detail = fetchIClosedDetail(c.id, apiKey);
-      var utm = parseUtmFromUrl(detail.referrerUrl);
+      // UTM: fuente PRINCIPAL = el utm de la call agendada (eventCalls[].utm), que es de donde
+      // iClosed arma sus columnas de UTM. El referrerUrl del contacto a veces viene sin UTMs
+      // (ej. llegó a la booking page sin params) y quedaba como "orgánico". Fallback: referrerUrl.
+      var utm = utmFromEventCalls(c.id, apiKey) || parseUtmFromUrl(detail.referrerUrl);
       // Event = los events (calls) asociados al contacto, de ContactEvents del item de lista. Es
       // persistente y lista TODAS las calls (Call A/B). /v1/eventCalls traía muy pocas (bug).
       var eventName = contactEventNames(c.ContactEvents);
@@ -590,9 +593,14 @@ function runIClosedAuto(since, until) {
       } else {
         prev['Real MQL'] = detail.realMql;   // siempre el último
         prev['Lead Score'] = detail.leadScore;
+        // UTM: no se pisan si ya tienen valor, pero SÍ se rellenan si estaban vacíos (ej. un
+        // contacto que primero vino sin UTM en el referrer y después aparece el utm de la call).
+        if (!prev['Campaign'] && utm.campaign) prev['Campaign'] = utm.campaign;
+        if (!prev['Ad Set'] && utm.medium) prev['Ad Set'] = utm.medium;
+        if (!prev['Ad'] && utm.content) prev['Ad'] = utm.content;
         var frozen = prev['Scheduling status'] === 'DISCOVERY_CALL_BOOKED' || prev['Scheduling status'] === 'STRATEGY_CALL_BOOKED';
         if (!frozen) { prev['Scheduling status'] = status; prev['Event'] = eventName; }
-        // Date / utm: no se tocan (se fijaron al crear la fila)
+        // Date: no se toca (se fijó al crear la fila)
       }
     } catch (e) {
       Logger.log('iClosed_Auto contacto ' + c.id + ' FALLO, sigo: ' + e.message);
@@ -742,6 +750,24 @@ function parseUtmFromUrl(url) {
 function decodeUtmValue(v) {
   if (!v) return '';
   try { return decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) { return v.replace(/\+/g, ' '); }
+}
+
+// UTM desde el utm de la call agendada (eventCalls[].utm), que es de donde iClosed arma sus
+// columnas de UTM. Devuelve el primer call que tenga utm_campaign/medium/content, o null si ninguno.
+// OJO: acá los valores vienen en formato "+"-por-espacio (igual que el export manual, NO percent-
+// encoded como el referrerUrl), así que se guardan tal cual -- el crosscheck del dashboard los matchea.
+function utmFromEventCalls(contactId, apiKey) {
+  var url = ICLOSED_BASE_URL + '/v1/eventCalls?contactId=' + contactId + '&eventType=ALL&limit=20&page=0';
+  var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
+  var calls = (JSON.parse(resp.getContentText()).data || {}).eventCalls || [];
+  for (var i = 0; i < calls.length; i++) {
+    var m = {};
+    (calls[i].utm || []).forEach(function (u) { if (u && u.utmKey && !(u.utmKey in m)) m[u.utmKey] = u.utmValue; });
+    if (m['utm_campaign'] || m['utm_medium'] || m['utm_content']) {
+      return { campaign: m['utm_campaign'] || '', medium: m['utm_medium'] || '', content: m['utm_content'] || '' };
+    }
+  }
+  return null;
 }
 
 function readSheetAsObjects(sheetName, headers) {
