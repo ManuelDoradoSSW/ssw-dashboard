@@ -584,7 +584,7 @@ function runIClosedAuto(since, until) {
 
       if (!prev) {
         byId[id] = {
-          'Date': (detail.joinedTime || '').substring(0, 10),
+          'Date': iclosedDate(detail.joinedTime),
           'Account': '',
           'Campaign': utm.campaign, 'Ad Set': utm.medium, 'Ad': utm.content,
           'Real MQL': detail.realMql, 'Lead Score': detail.leadScore,
@@ -598,9 +598,9 @@ function runIClosedAuto(since, until) {
         if (!prev['Campaign'] && utm.campaign) prev['Campaign'] = utm.campaign;
         if (!prev['Ad Set'] && utm.medium) prev['Ad Set'] = utm.medium;
         if (!prev['Ad'] && utm.content) prev['Ad'] = utm.content;
+        prev['Date'] = iclosedDate(detail.joinedTime); // se recalcula (joinedTime no cambia) para auto-corregir la TZ
         var frozen = prev['Scheduling status'] === 'DISCOVERY_CALL_BOOKED' || prev['Scheduling status'] === 'STRATEGY_CALL_BOOKED';
         if (!frozen) { prev['Scheduling status'] = status; prev['Event'] = eventName; }
-        // Date: no se toca (se fijó al crear la fila)
       }
     } catch (e) {
       Logger.log('iClosed_Auto contacto ' + c.id + ' FALLO, sigo: ' + e.message);
@@ -716,6 +716,19 @@ function debugIClosedJoined() {
       Logger.log('   -> UTC date=' + String(d.joinedTime).substring(0, 10) + ' | en TZ ' + tz + '=' + Utilities.formatDate(new Date(d.joinedTime), tz, 'yyyy-MM-dd HH:mm'));
     } catch (e) { Logger.log('   parse error: ' + e.message); }
   });
+}
+
+// joinedTime viene en UTC (con Z). iClosed muestra la "Contact Creation Date" en TZ local, no UTC,
+// así que un contacto creado a la noche (local) caía un día después en UTC. Se convierte a la TZ del
+// spreadsheet antes de tomar la fecha, para que matchee lo que se ve en iClosed.
+function iclosedDate(joinedTime) {
+  if (!joinedTime) return '';
+  try {
+    var tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+    return Utilities.formatDate(new Date(joinedTime), tz, 'yyyy-MM-dd');
+  } catch (e) {
+    return String(joinedTime).substring(0, 10);
+  }
 }
 
 function fetchIClosedDetail(contactId, apiKey) {
