@@ -718,14 +718,17 @@ function debugIClosedJoined() {
   });
 }
 
-// joinedTime viene en UTC (con Z). iClosed muestra la "Contact Creation Date" en TZ local, no UTC,
-// así que un contacto creado a la noche (local) caía un día después en UTC. Se convierte a la TZ del
-// spreadsheet antes de tomar la fecha, para que matchee lo que se ve en iClosed.
+// TZ en que iClosed muestra la "Contact Creation Date" (workspace US Central). Si el workspace
+// cambia de TZ, actualizar acá.
+var ICLOSED_DISPLAY_TZ = 'America/Chicago';
+
+// joinedTime viene en UTC (con Z). iClosed muestra la fecha en ICLOSED_DISPLAY_TZ, no en UTC, así
+// que un contacto creado a la noche (local) caía un día después en UTC. Se convierte a esa TZ antes
+// de tomar la fecha, para que matchee exactamente lo que se ve en iClosed (incluso en la medianoche).
 function iclosedDate(joinedTime) {
   if (!joinedTime) return '';
   try {
-    var tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
-    return Utilities.formatDate(new Date(joinedTime), tz, 'yyyy-MM-dd');
+    return Utilities.formatDate(new Date(joinedTime), ICLOSED_DISPLAY_TZ, 'yyyy-MM-dd');
   } catch (e) {
     return String(joinedTime).substring(0, 10);
   }
