@@ -35,7 +35,7 @@ function createTriggers() {
   ScriptApp.newTrigger('syncMeta').timeBased().everyDays(1).atHour(3).create();
   ScriptApp.newTrigger('syncPostHog').timeBased().everyDays(1).atHour(4).create();
   ScriptApp.newTrigger('syncCreatives').timeBased().everyDays(1).atHour(2).create();
-  ScriptApp.newTrigger('syncIClosedAuto').timeBased().everyDays(1).atHour(5).create();
+  ScriptApp.newTrigger('syncIClosedAuto').timeBased().everyDays(1).atHour(11).inTimezone('America/Buenos_Aires').create();
   // OJO: ya NO se arma syncIClosed (deprecado, escribía a la tab histórica). Ver syncIClosed().
 }
 
@@ -530,13 +530,15 @@ function syncIClosedAuto() {
   runIClosedAuto(since, daysAgo(0));
 }
 
-// Agrega SOLO el trigger diario de syncIClosedAuto (~5am), sin tocar los otros. Correr una vez,
-// después de validar. NO usar createTriggers (ese re-arma el syncIClosed viejo, roto).
+// (Re)crea el trigger diario de syncIClosedAuto a las 11 AM Argentina. Borra el existente primero,
+// así re-correr esta función actualiza el horario. No toca los otros triggers. NO usar createTriggers
+// para esto (ese re-arma el syncIClosed viejo, roto).
 function createIClosedAutoTrigger() {
-  var exists = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'syncIClosedAuto'; });
-  if (exists) { Logger.log('El trigger de syncIClosedAuto ya existe.'); return; }
-  ScriptApp.newTrigger('syncIClosedAuto').timeBased().everyDays(1).atHour(5).create();
-  Logger.log('Trigger de syncIClosedAuto creado (diario ~5am).');
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'syncIClosedAuto') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('syncIClosedAuto').timeBased().everyDays(1).atHour(11).inTimezone('America/Buenos_Aires').create();
+  Logger.log('Trigger de syncIClosedAuto (re)creado: diario 11 AM America/Buenos_Aires.');
 }
 
 // Para el test de validación: llena iClosed_Auto desde una fecha dada hasta hoy, mes por mes
