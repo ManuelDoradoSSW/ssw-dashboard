@@ -736,6 +736,22 @@ function iclosedDate(joinedTime) {
   }
 }
 
+// Diagnóstico: lista los contactos de los últimos 2 días con joinedTime + en qué día caen en
+// Argentina vs Chicago, para ver si el desfase (6 en iClosed vs 4 en el sheet) es por TZ o por
+// timing (contactos creados después de la corrida). Correr desde el editor.
+function debugIClosedDatesTZ() {
+  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
+  var contacts = fetchIClosedContactsList(daysAgo(2), daysAgo(0), apiKey);
+  Logger.log('contactos últimos 2 días: ' + contacts.length);
+  contacts.forEach(function (c) {
+    var d = fetchIClosedDetail(c.id, apiKey);
+    var jt = d.joinedTime, ba = '?', chi = '?';
+    try { ba = Utilities.formatDate(new Date(jt), 'America/Buenos_Aires', 'MM-dd HH:mm'); } catch (e) {}
+    try { chi = Utilities.formatDate(new Date(jt), 'America/Chicago', 'MM-dd HH:mm'); } catch (e) {}
+    Logger.log((c.email || c.id) + ' | joinedTime=' + jt + ' | ARG=' + ba + ' | Chicago=' + chi);
+  });
+}
+
 function fetchIClosedDetail(contactId, apiKey) {
   var url = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId;
   var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
