@@ -773,6 +773,23 @@ function debugIClosedEmptyUtms() {
   });
 }
 
+// Diagnóstico profundo: dumpea el JSON COMPLETO de /contacts/detail y /eventCalls (varios params)
+// para un contacto sin UTMs, para encontrar dónde guarda iClosed el UTM del click del ad cuando
+// el contacto todavía no bookeó. Correr desde el editor.
+function debugIClosedFullContact() {
+  var cid = 4577269;
+  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
+  var det = UrlFetchApp.fetch(ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + cid, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true }).getContentText();
+  Logger.log('=== DETAIL (full) ===');
+  for (var i = 0; i < det.length; i += 4500) Logger.log(det.substring(i, i + 4500));
+  ['&eventType=ALL', '', '&eventType=UPCOMING', '&eventType=PAST'].forEach(function (q) {
+    var ec = UrlFetchApp.fetch(ICLOSED_BASE_URL + '/v1/eventCalls?contactId=' + cid + q + '&limit=20', { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true }).getContentText();
+    var n = ((JSON.parse(ec).data || {}).eventCalls || []).length;
+    Logger.log('=== eventCalls' + (q || '(sin eventType)') + ' -> ' + n + ' calls ===');
+    if (n) Logger.log(ec.substring(0, 4000));
+  });
+}
+
 function fetchIClosedDetail(contactId, apiKey) {
   var url = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId;
   var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
