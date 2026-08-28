@@ -753,6 +753,26 @@ function debugIClosedDatesTZ() {
   });
 }
 
+// Diagnóstico: contactos de hoy que quedaron SIN UTMs (POTENTIAL/QUALIFIED, sin call agendada).
+// Dumpea referrerUrl + ContactEvents + el utm de cada eventCall, para ver de dónde saca iClosed
+// los UTMs cuando el contacto todavía no bookeó. Correr desde el editor.
+function debugIClosedEmptyUtms() {
+  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
+  [4574429, 4577269, 4579477].forEach(function (cid) {
+    var d = JSON.parse(UrlFetchApp.fetch(ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + cid, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true }).getContentText());
+    var data = d.data || {};
+    Logger.log('=== contacto ' + cid + ' | status=' + data.status + ' ===');
+    Logger.log('  referrerUrl: ' + JSON.stringify(data.referrerUrl));
+    Logger.log('  ContactEvents: ' + JSON.stringify(data.ContactEvents));
+    var calls = (JSON.parse(UrlFetchApp.fetch(ICLOSED_BASE_URL + '/v1/eventCalls?contactId=' + cid + '&eventType=ALL&limit=10', { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true }).getContentText()).data || {}).eventCalls || [];
+    Logger.log('  eventCalls: ' + calls.length);
+    calls.forEach(function (c, i) {
+      var utm = (c.utm || []).filter(function (u) { return u.utmKey && u.utmKey.indexOf('utm_') === 0; });
+      Logger.log('   call[' + i + '] event=' + (c.event && c.event.name) + ' | utm=' + JSON.stringify(utm));
+    });
+  });
+}
+
 function fetchIClosedDetail(contactId, apiKey) {
   var url = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId;
   var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
