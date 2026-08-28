@@ -720,9 +720,10 @@ function debugIClosedJoined() {
   });
 }
 
-// TZ en que iClosed muestra la "Contact Creation Date" (workspace US Central). Si el workspace
-// cambia de TZ, actualizar acá.
-var ICLOSED_DISPLAY_TZ = 'America/Chicago';
+// TZ en que iClosed muestra la "Contact Creation Date" -- confirmado US Eastern comparando las
+// horas de la vista de iClosed contra el joinedTime UTC (ej. 12:34Z se muestra 8:34 AM = UTC-4).
+// Si el workspace cambia de TZ, actualizar acá.
+var ICLOSED_DISPLAY_TZ = 'America/New_York';
 
 // joinedTime viene en UTC (con Z). iClosed muestra la fecha en ICLOSED_DISPLAY_TZ, no en UTC, así
 // que un contacto creado a la noche (local) caía un día después en UTC. Se convierte a esa TZ antes
