@@ -278,37 +278,6 @@ function writeWholeSheet(sheetName, headers, rows) {
   if (rows.length > 0) sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
 }
 
-function debugMetaActions() {
-  var token = PropertiesService.getScriptProperties().getProperty('META_TOKEN');
-  var since = daysAgo(30);
-  var until = daysAgo(0);
-  var timeRange = encodeURIComponent(JSON.stringify({ since: since, until: until }));
-
-  META_ACCOUNTS.forEach(function (acc) {
-    var url = 'https://graph.facebook.com/' + GRAPH_API_VERSION + '/' + acc.id + '/insights'
-      + '?level=campaign&time_range=' + timeRange
-      + '&fields=campaign_name,actions'
-      + '&limit=500&access_token=' + token;
-    var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-    var json = JSON.parse(resp.getContentText());
-    if (json.error) { Logger.log(acc.name + ' ERROR: ' + JSON.stringify(json.error)); return; }
-    var types = {};
-    (json.data || []).forEach(function (r) {
-      (r.actions || []).forEach(function (a) {
-        types[a.action_type] = (types[a.action_type] || 0) + Number(a.value || 0);
-      });
-    });
-    Logger.log(acc.name + ' (' + acc.id + ') action types last 30 days: ' + JSON.stringify(types, null, 2));
-
-    var ccUrl = 'https://graph.facebook.com/' + GRAPH_API_VERSION + '/' + acc.id + '/customconversions'
-      + '?fields=id,name,custom_event_type,rule&access_token=' + token;
-    var ccResp = UrlFetchApp.fetch(ccUrl, { muteHttpExceptions: true });
-    var ccJson = JSON.parse(ccResp.getContentText());
-    if (ccJson.error) { Logger.log(acc.name + ' customconversions ERROR: ' + JSON.stringify(ccJson.error)); return; }
-    Logger.log(acc.name + ' custom conversions: ' + JSON.stringify(ccJson.data, null, 2));
-  });
-}
-
 function findAction(actions, preferredTypes) {
   if (!actions) return 0;
   for (var i = 0; i < preferredTypes.length; i++) {
@@ -435,78 +404,6 @@ function buildIClosedRow(call, contactFields) {
   var fields = contactFields[call.contactId] || { realMql: '', leadScore: '' };
   var date = (call.dateTimeUTC || call.dateTime || '').substring(0, 10);
   return [date, '', utmMap['utm_campaign'] || '', utmMap['utm_medium'] || '', ad, fields.realMql, fields.leadScore];
-}
-
-// Prueba manual: trae las últimas llamadas (event calls) de los últimos 14 días y loguea
-// el JSON crudo tal cual lo devuelve la API. Correrla UNA vez para ver los nombres reales
-// de UTM keys, el valor de "outcome", y cómo aparece el custom field "Lead Score" en
-// secondaryAnswers/questions -- recién con eso se puede escribir el sync real sin adivinar
-// la forma exacta de la respuesta.
-function debugIClosed() {
-  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
-  if (!apiKey) throw new Error('Falta ICLOSED_API_KEY en Script Properties');
-
-  var url = ICLOSED_BASE_URL + '/v1/eventCalls'
-    + '?eventType=PAST'
-    + '&dateFrom=' + daysAgo(14)
-    + '&dateTo=' + daysAgo(0)
-    + '&limit=5&page=0&orderColumn=dateTime&orderBy=desc';
-
-  var resp = UrlFetchApp.fetch(url, {
-    headers: { Authorization: 'Bearer ' + apiKey },
-    muteHttpExceptions: true
-  });
-  Logger.log('STATUS ' + resp.getResponseCode());
-  Logger.log(resp.getContentText());
-}
-
-// Prueba manual #3: para un contacto que en el export manual aparece con MÚLTIPLES ads
-// (UTM Content con coma), ver si "referrerUrl" de /v1/contacts/detail corresponde al primer
-// touch o al último -- necesario para decidir qué se pierde si el sync usa solo referrerUrl
-// en vez del multi-touch completo que trae el export manual. Uso "search" de /v1/contacts
-// para encontrar el contactId a partir del email (no lo tenemos a mano de otra forma).
-function debugIClosedFindByEmail(email) {
-  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
-  if (!apiKey) throw new Error('Falta ICLOSED_API_KEY en Script Properties');
-
-  var searchUrl = ICLOSED_BASE_URL + '/v1/contacts?search=' + encodeURIComponent(email) + '&limit=5';
-  var searchResp = UrlFetchApp.fetch(searchUrl, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-  Logger.log('SEARCH STATUS ' + searchResp.getResponseCode());
-  Logger.log(searchResp.getContentText());
-
-  var searchJson = JSON.parse(searchResp.getContentText());
-  var contacts = (searchJson.data && searchJson.data.contacts) || [];
-  if (!contacts.length) { Logger.log('No se encontró ningún contacto con ese email.'); return; }
-
-  var contactId = contacts[0].id;
-  Logger.log('contactId encontrado: ' + contactId);
-
-  var detailUrl = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId;
-  var detailResp = UrlFetchApp.fetch(detailUrl, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-  Logger.log('DETAIL STATUS ' + detailResp.getResponseCode());
-  Logger.log(detailResp.getContentText());
-}
-
-// Prueba manual #2: debugIClosed() no trajo "Lead Score" en ningún lado (solo preguntas de
-// intake tipo modelo de negocio/revenue/ad spend). La spec de /v1/contacts/detail sí expone
-// "CustomFieldAssociation" -- ahí es donde debería vivir Lead Score (y potencialmente Real
-// MQL, si también es un custom field en vez de derivarse de task.outcome). Correr esto con
-// un contactId real (ej. uno que haya salido en el log de debugIClosed) para confirmar.
-function debugIClosedContactDetail(contactId) {
-  // el botón Run del editor no permite pasar argumentos -- si corrés esto directo desde el
-  // dropdown, sin llamarla desde otro lado, usa este contactId de ejemplo (salió en el log
-  // de debugIClosed()). Para probar con otro, cambiá este número.
-  contactId = contactId || 4297233;
-  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
-  if (!apiKey) throw new Error('Falta ICLOSED_API_KEY en Script Properties');
-
-  var url = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId;
-  var resp = UrlFetchApp.fetch(url, {
-    headers: { Authorization: 'Bearer ' + apiKey },
-    muteHttpExceptions: true
-  });
-  Logger.log('STATUS ' + resp.getResponseCode());
-  Logger.log(resp.getContentText());
 }
 
 // ===================== ICLOSED AUTO (API -> tab aparte, para validar) =====================
@@ -638,88 +535,6 @@ function fetchIClosedContactsList(since, until, apiKey) {
   return all;
 }
 
-// Diagnóstico de AUTH: /v1/contacts dio 401 "Invalid API key". Esto pega a varios endpoints con
-// la MISMA key para ver si el 401 es de toda la key (vencida/rota) o solo de contacts (scope).
-// NO expone la key en el log (solo largo y si tiene espacios de más). Correr y pegar el log.
-function debugIClosedAuth() {
-  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
-  Logger.log('key present=' + (!!apiKey) + ' length=' + (apiKey ? apiKey.length : 0)
-    + ' trimmedDiff=' + (apiKey ? (apiKey.length - apiKey.trim().length) : 0));
-  var eps = [
-    '/v1/eventCalls?eventType=PAST&dateFrom=' + daysAgo(14) + '&dateTo=' + daysAgo(0) + '&limit=2&page=0&orderColumn=dateTime&orderBy=desc',
-    '/v1/contacts?limit=2',
-    '/v1/users?limit=2',
-    '/v1/deals?limit=2'
-  ];
-  eps.forEach(function (ep) {
-    var resp = UrlFetchApp.fetch(ICLOSED_BASE_URL + ep, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-    Logger.log(ep.split('?')[0] + '  ->  HTTP ' + resp.getResponseCode() + '  |  ' + resp.getContentText().substring(0, 160));
-  });
-}
-
-// Diagnóstico: por qué /v1/contacts devolvió 0. Prueba varias formas del filtro de tiempo en una
-// sola corrida y loguea el count de cada una. Correr desde el editor y pegar el log.
-function debugIClosedContactsList() {
-  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
-  if (!apiKey) throw new Error('Falta ICLOSED_API_KEY en Script Properties');
-  var base = ICLOSED_BASE_URL + '/v1/contacts';
-  var tries = [
-    '?limit=3',
-    '?limit=3&orderColumn=joinedTime&orderBy=desc',
-    '?limit=3&timeFrom=2026-07-01&timeTo=2026-08-25',
-    '?limit=3&timeFrom=2026-07-01T00:00:00Z&timeTo=2026-08-25T23:59:59Z',
-    '?limit=3&timeFrom=2026-07-01T00:00:00.000Z&timeTo=2026-08-25T23:59:59.999Z'
-  ];
-  tries.forEach(function (qs) {
-    var resp = UrlFetchApp.fetch(base + qs, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-    var code = resp.getResponseCode();
-    var txt = resp.getContentText();
-    var json = {}; try { json = JSON.parse(txt); } catch (e) {}
-    var count = json.data && json.data.count;
-    var contacts = (json.data && json.data.contacts) || [];
-    Logger.log(qs + '  ->  HTTP ' + code + '  count=' + count + '  returned=' + contacts.length);
-    if (contacts.length) Logger.log('   first: ' + JSON.stringify(contacts[0]).substring(0, 500));
-    else Logger.log('   body: ' + txt.substring(0, 300));
-  });
-}
-
-// Diagnóstico: un contacto que en iClosed tiene UTMs de Meta pero acá vino "orgánico" (sin UTMs).
-// Dumpea el referrerUrl (lo que uso hoy) Y el utm de sus eventCalls (posible fuente alternativa),
-// para ver de dónde saca iClosed los UTMs. Correr desde el editor (usa 4556654 por defecto).
-function debugIClosedUtms(contactId) {
-  contactId = contactId || 4556654;
-  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
-  if (!apiKey) throw new Error('Falta ICLOSED_API_KEY');
-  var d = UrlFetchApp.fetch(ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-  var dj = JSON.parse(d.getContentText());
-  Logger.log('contactId ' + contactId);
-  Logger.log('  referrerUrl: ' + JSON.stringify(dj.data && dj.data.referrerUrl));
-  Logger.log('  ContactEvents: ' + JSON.stringify(dj.data && dj.data.ContactEvents));
-  var e = UrlFetchApp.fetch(ICLOSED_BASE_URL + '/v1/eventCalls?contactId=' + contactId + '&eventType=ALL&limit=10', { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-  var calls = (JSON.parse(e.getContentText()).data || {}).eventCalls || [];
-  Logger.log('  eventCalls: ' + calls.length);
-  calls.forEach(function (c, i) {
-    Logger.log('   call[' + i + '] event=' + (c.event && c.event.name) + ' | utm=' + JSON.stringify(c.utm));
-  });
-}
-
-// Diagnóstico de fecha/TZ: 2 contactos aparecen el 27/8 en el sheet pero iClosed muestra 1.
-// Dumpea joinedTime/createdAt crudos + cómo caen en la TZ del spreadsheet, para ver si es un
-// tema de UTC vs TZ de la cuenta. Correr desde el editor.
-function debugIClosedJoined() {
-  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
-  var tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
-  Logger.log('spreadsheet TZ: ' + tz);
-  [4562566, 4567867].forEach(function (cid) {
-    var r = UrlFetchApp.fetch(ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + cid, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-    var d = (JSON.parse(r.getContentText()).data) || {};
-    Logger.log('cid ' + cid + ' | joinedTime=' + JSON.stringify(d.joinedTime) + ' | createdAt=' + JSON.stringify(d.createdAt) + ' | timeZone=' + JSON.stringify(d.timeZone));
-    try {
-      Logger.log('   -> UTC date=' + String(d.joinedTime).substring(0, 10) + ' | en TZ ' + tz + '=' + Utilities.formatDate(new Date(d.joinedTime), tz, 'yyyy-MM-dd HH:mm'));
-    } catch (e) { Logger.log('   parse error: ' + e.message); }
-  });
-}
-
 // TZ en que iClosed muestra la "Contact Creation Date" -- confirmado US Eastern comparando las
 // horas de la vista de iClosed contra el joinedTime UTC (ej. 12:34Z se muestra 8:34 AM = UTC-4).
 // Si el workspace cambia de TZ, actualizar acá.
@@ -735,59 +550,6 @@ function iclosedDate(joinedTime) {
   } catch (e) {
     return String(joinedTime).substring(0, 10);
   }
-}
-
-// Diagnóstico: lista los contactos de los últimos 2 días con joinedTime + en qué día caen en
-// Argentina vs Chicago, para ver si el desfase (6 en iClosed vs 4 en el sheet) es por TZ o por
-// timing (contactos creados después de la corrida). Correr desde el editor.
-function debugIClosedDatesTZ() {
-  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
-  var contacts = fetchIClosedContactsList(daysAgo(2), daysAgo(0), apiKey);
-  Logger.log('contactos últimos 2 días: ' + contacts.length);
-  contacts.forEach(function (c) {
-    var d = fetchIClosedDetail(c.id, apiKey);
-    var jt = d.joinedTime, ba = '?', chi = '?';
-    try { ba = Utilities.formatDate(new Date(jt), 'America/Buenos_Aires', 'MM-dd HH:mm'); } catch (e) {}
-    try { chi = Utilities.formatDate(new Date(jt), 'America/Chicago', 'MM-dd HH:mm'); } catch (e) {}
-    Logger.log((c.email || c.id) + ' | joinedTime=' + jt + ' | ARG=' + ba + ' | Chicago=' + chi);
-  });
-}
-
-// Diagnóstico: contactos de hoy que quedaron SIN UTMs (POTENTIAL/QUALIFIED, sin call agendada).
-// Dumpea referrerUrl + ContactEvents + el utm de cada eventCall, para ver de dónde saca iClosed
-// los UTMs cuando el contacto todavía no bookeó. Correr desde el editor.
-function debugIClosedEmptyUtms() {
-  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
-  [4574429, 4577269, 4579477].forEach(function (cid) {
-    var d = JSON.parse(UrlFetchApp.fetch(ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + cid, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true }).getContentText());
-    var data = d.data || {};
-    Logger.log('=== contacto ' + cid + ' | status=' + data.status + ' ===');
-    Logger.log('  referrerUrl: ' + JSON.stringify(data.referrerUrl));
-    Logger.log('  ContactEvents: ' + JSON.stringify(data.ContactEvents));
-    var calls = (JSON.parse(UrlFetchApp.fetch(ICLOSED_BASE_URL + '/v1/eventCalls?contactId=' + cid + '&eventType=ALL&limit=10', { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true }).getContentText()).data || {}).eventCalls || [];
-    Logger.log('  eventCalls: ' + calls.length);
-    calls.forEach(function (c, i) {
-      var utm = (c.utm || []).filter(function (u) { return u.utmKey && u.utmKey.indexOf('utm_') === 0; });
-      Logger.log('   call[' + i + '] event=' + (c.event && c.event.name) + ' | utm=' + JSON.stringify(utm));
-    });
-  });
-}
-
-// Diagnóstico profundo: dumpea el JSON COMPLETO de /contacts/detail y /eventCalls (varios params)
-// para un contacto sin UTMs, para encontrar dónde guarda iClosed el UTM del click del ad cuando
-// el contacto todavía no bookeó. Correr desde el editor.
-function debugIClosedFullContact() {
-  var cid = 4577269;
-  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
-  var det = UrlFetchApp.fetch(ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + cid, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true }).getContentText();
-  Logger.log('=== DETAIL (full) ===');
-  for (var i = 0; i < det.length; i += 4500) Logger.log(det.substring(i, i + 4500));
-  ['&eventType=ALL', '', '&eventType=UPCOMING', '&eventType=PAST'].forEach(function (q) {
-    var ec = UrlFetchApp.fetch(ICLOSED_BASE_URL + '/v1/eventCalls?contactId=' + cid + q + '&limit=20', { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true }).getContentText();
-    var n = ((JSON.parse(ec).data || {}).eventCalls || []).length;
-    Logger.log('=== eventCalls' + (q || '(sin eventType)') + ' -> ' + n + ' calls ===');
-    if (n) Logger.log(ec.substring(0, 4000));
-  });
 }
 
 function fetchIClosedDetail(contactId, apiKey) {
@@ -875,38 +637,6 @@ function readSheetAsObjects(sheetName, headers) {
 }
 
 // ===================== POSTHOG =====================
-
-function debugWebStats() {
-  var props = PropertiesService.getScriptProperties();
-  var apiKey = props.getProperty('POSTHOG_API_KEY');
-  var projectId = props.getProperty('POSTHOG_PROJECT_ID');
-  var host = props.getProperty('POSTHOG_HOST');
-
-  var day = daysAgo(1); // ayer, para tener un día completo cerrado
-  var body = {
-    query: {
-      kind: 'WebStatsTableQuery',
-      properties: [{ key: '$entry_utm_source', value: 'fb_ad', operator: 'exact', type: 'session' }],
-      breakdownBy: 'InitialUTMContent',
-      dateRange: { date_from: day, date_to: day },
-      includeBounceRate: true,
-      limit: 200
-    }
-  };
-
-  var resp = UrlFetchApp.fetch(host + '/api/projects/' + projectId + '/query/', {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { Authorization: 'Bearer ' + apiKey },
-    payload: JSON.stringify(body),
-    muteHttpExceptions: true
-  });
-  Logger.log('DAY=' + day);
-  Logger.log('STATUS ' + resp.getResponseCode());
-  var json = JSON.parse(resp.getContentText());
-  Logger.log('COLUMNS: ' + JSON.stringify(json.columns));
-  Logger.log('RESULTS: ' + JSON.stringify(json.results).substring(0, 2500));
-}
 
 function syncPostHog() {
   var props = PropertiesService.getScriptProperties();
