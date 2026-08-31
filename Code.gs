@@ -10,14 +10,12 @@ var META_ACCOUNTS = [
 
 var META_SHEET = 'Meta_Raw';
 var POSTHOG_SHEET = 'PostHog_Raw';
-// Solo lo usaba el syncIClosed deprecado (ver más abajo). La tab histórica real ahora se llama
-// iClosed_historical_donotchange y NO la escribe ningún sync -- es manual, congelada.
-var ICLOSED_SHEET = 'iClosed_Raw';
+// La tab histórica de iClosed (iClosed_historical_donotchange) es manual y congelada: NO la escribe
+// ningún sync. Lo del 25/8 en adelante lo maneja syncIClosedAuto (escribe a iClosed_Auto).
 
 var META_HEADERS = ['Date', 'Account', 'Campaign', 'Ad Set', 'Ad', 'Spend', 'Impressions',
   'Clicks', 'Reach', 'Frequency', 'LP Views', 'Registrations', 'Schedules (Meta)', 'Video Views', 'Thumbnail URL'];
 var POSTHOG_HEADERS = ['Date', 'Ad', 'Sessions', 'Bounced Sessions'];
-var ICLOSED_HEADERS = ['Date', 'Account', 'Campaign', 'Ad Set', 'Ad', 'Real MQL', 'Lead Score'];
 var CREATIVES_SHEET = 'Creatives';
 var CREATIVES_HEADERS = ['Ad', 'Thumbnail URL'];
 
@@ -310,100 +308,12 @@ function syncIClosed() {
   throw new Error('syncIClosed está deprecado. Usá syncIClosedAuto (escribe a iClosed_Auto). La tab histórica no se toca.');
 }
 
-function syncIClosed_DEPRECATED_impl() {
-  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
-  if (!apiKey) throw new Error('Falta ICLOSED_API_KEY en Script Properties');
-
-  var since = daysAgo(WINDOW_DAYS);
-  var until = daysAgo(0);
-  var calls = fetchIClosedEventCalls(since, until, apiKey);
-
-  // Real MQL y Lead Score son custom fields a nivel CONTACTO (no de la llamada puntual),
-  // así que se piden una sola vez por contacto único, no por call -- confirmado con
-  // debugIClosedContactDetail() (customField.identifier 'real-mql' / 'lead-score').
-  var contactFields = fetchIClosedContactFields(uniqueContactIds(calls), apiKey);
-
-  var rows = calls
-    .map(function (call) { return buildIClosedRow(call, contactFields); })
-    .filter(Boolean); // descarta calls sin utm_content -- sin Ad no hay con qué atribuir la fila
-
-  upsertRows(ICLOSED_SHEET, ICLOSED_HEADERS, rows, since, until);
-  Logger.log('iClosed: ' + rows.length + ' filas (de ' + calls.length + ' calls) para ' + since + '..' + until);
-}
-
-function fetchIClosedEventCalls(since, until, apiKey) {
-  var all = [];
-  var limit = 100;
-  var page = 0;
-  while (true) {
-    var url = ICLOSED_BASE_URL + '/v1/eventCalls'
-      + '?eventType=PAST&dateFrom=' + since + '&dateTo=' + until
-      + '&limit=' + limit + '&page=' + page + '&orderColumn=dateTime&orderBy=asc';
-    var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-    var json = JSON.parse(resp.getContentText());
-    if (json.error) throw new Error('iClosed eventCalls: ' + JSON.stringify(json.error));
-    var calls = (json.data && json.data.eventCalls) || [];
-    all = all.concat(calls);
-    var total = (json.data && json.data.count) || 0;
-    page++;
-    if (calls.length === 0 || page * limit >= total) break;
-  }
-  return all;
-}
-
-function uniqueContactIds(calls) {
-  var seen = {};
-  var ids = [];
-  calls.forEach(function (c) {
-    if (c.contactId && !seen[c.contactId]) { seen[c.contactId] = true; ids.push(c.contactId); }
-  });
-  return ids;
-}
-
-// Una llamada a /v1/contacts/detail por contacto -- la API no ofrece un endpoint bulk para
-// esto (contactId es un parámetro simple, no una lista). Para la ventana rolling de
-// WINDOW_DAYS esto es un puñado de contactos, no un problema de cuota.
-function fetchIClosedContactFields(contactIds, apiKey) {
-  var map = {};
-  contactIds.forEach(function (contactId) {
-    var url = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId;
-    var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-    var json = JSON.parse(resp.getContentText());
-    if (json.error) {
-      Logger.log('iClosed contact ' + contactId + ' FALLO, sigo con el resto: ' + JSON.stringify(json.error));
-      return;
-    }
-    var assoc = (json.data && json.data.CustomFieldAssociation) || [];
-    map[contactId] = {
-      realMql: findCustomFieldAnswer(assoc, 'real-mql'),
-      leadScore: findCustomFieldAnswer(assoc, 'lead-score')
-    };
-  });
-  return map;
-}
-
 function findCustomFieldAnswer(customFieldAssociations, identifier) {
   var entry = customFieldAssociations.filter(function (a) {
     return a.customField && a.customField.identifier === identifier;
   })[0];
   if (!entry || !entry.CustomFieldAnswer || !entry.CustomFieldAnswer.length) return '';
   return entry.CustomFieldAnswer[0].answer || '';
-}
-
-// utm_campaign/utm_medium/utm_content son literalmente Campaign/Ad Set/Ad (mismo tracking
-// template que Meta_Raw) -- utm_content ya viene con espacios codificados como "+", igual
-// que el export manual de iClosed, así que el decodePlusEncoded/resolveAdName del lado del
-// HTML lo resuelve sin cambios. Account queda vacío a propósito: el dashboard ya lo completa
-// cruzando Campaign contra Meta_Raw (mismo comportamiento que el export manual de siempre).
-function buildIClosedRow(call, contactFields) {
-  var utmMap = {};
-  (call.utm || []).forEach(function (u) { utmMap[u.utmKey] = u.utmValue; });
-  var ad = utmMap['utm_content'];
-  if (!ad) return null;
-
-  var fields = contactFields[call.contactId] || { realMql: '', leadScore: '' };
-  var date = (call.dateTimeUTC || call.dateTime || '').substring(0, 10);
-  return [date, '', utmMap['utm_campaign'] || '', utmMap['utm_medium'] || '', ad, fields.realMql, fields.leadScore];
 }
 
 // ===================== ICLOSED AUTO (API -> tab aparte, para validar) =====================
