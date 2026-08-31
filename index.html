@@ -22,6 +22,7 @@
     --good:           #0ca30c;
     --critical:       #d03b3b;
     --accent:         #8a6a00; /* amber -- reserved for headline numbers/brand, not body text */
+    --qual-highlight: #1f8fd0; /* celeste -- resaltado de "qualified" en el funnel */
     --highlight-bg:   rgba(74,58,167,0.14);
     --funnel-1: #c3b6ec; --funnel-2: #9f8bdd; --funnel-3: #4a3aa7; --funnel-4: #3c2f89; --funnel-5: #241c52;
   }
@@ -41,6 +42,7 @@
       --good:           #0ca30c;
       --critical:       #e66767;
       --accent:         #E6C301;
+      --qual-highlight: #56b6e8; /* celeste (dark) */
       --highlight-bg:   rgba(144,133,233,0.22);
       --funnel-1: #241c52; --funnel-2: #3c2f89; --funnel-3: #9085e9; --funnel-4: #9f8bdd; --funnel-5: #c3b6ec;
     }
@@ -63,6 +65,7 @@
     --good:           #0ca30c;
     --critical:       #d03b3b;
     --accent:         #8a6a00;
+    --qual-highlight: #1f8fd0;
     --highlight-bg:   rgba(74,58,167,0.14);
     --funnel-1: #c3b6ec; --funnel-2: #9f8bdd; --funnel-3: #4a3aa7; --funnel-4: #3c2f89; --funnel-5: #241c52;
   }
@@ -81,6 +84,7 @@
     --good:           #0ca30c;
     --critical:       #e66767;
     --accent:         #E6C301;
+    --qual-highlight: #56b6e8;
     --highlight-bg:   rgba(144,133,233,0.22);
     --funnel-1: #241c52; --funnel-2: #3c2f89; --funnel-3: #9085e9; --funnel-4: #9f8bdd; --funnel-5: #c3b6ec;
   }
@@ -295,8 +299,13 @@
   /* ---- funnel ---- */
   .funnel { display: flex; flex-direction: column; gap: 6px; }
   .funnel-row { display: grid; grid-template-columns: 160px 1fr 90px 70px; align-items: center; gap: 12px; }
-  .funnel-bar-track { background: var(--surface-2); border-radius: 4px; height: 28px; }
-  .funnel-bar { height: 100%; border-radius: 4px; margin: 0 auto; transition: width .2s; }
+  .funnel-bar-track { position: relative; background: var(--surface-2); border-radius: 4px; height: 28px; }
+  .funnel-bar { position: relative; height: 100%; border-radius: 4px; margin: 0 auto; transition: width .2s; }
+  /* porción resaltada (qualified) dentro de la barra: pegada al borde DERECHO de la barra */
+  .funnel-bar-qual { position: absolute; right: 0; top: 0; height: 100%; border-radius: 0 4px 4px 0; background: var(--qual-highlight); }
+  /* aclaración en el espacio libre del track, a la derecha de la barra */
+  .funnel-qual-note { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 700; color: var(--text-secondary); display: flex; align-items: center; gap: 5px; white-space: nowrap; pointer-events: none; }
+  .funnel-qual-swatch { width: 9px; height: 9px; border-radius: 2px; background: var(--qual-highlight); display: inline-block; flex-shrink: 0; }
   .funnel-label { font-size: 13px; color: var(--text-secondary); font-weight: 700; }
   .funnel-value { font-size: 13px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
   .funnel-pct { font-size: 12px; color: var(--text-muted); text-align: right; font-weight: 700; }
@@ -486,6 +495,16 @@
           <div class="bignum-value" id="bn-cpbooking">–</div>
           <div class="bignum-delta" id="bn-cpbooking-delta"></div>
         </div>
+        <div class="bignum-tile" data-tooltip="Booking + Lead Score A/B (qualified)">
+          <div class="bignum-label">Qualified Bookings</div>
+          <div class="bignum-value" id="bn-qbooked">–</div>
+          <div class="bignum-delta" id="bn-qbooked-delta"></div>
+        </div>
+        <div class="bignum-tile" data-tooltip="Spend / Qualified Bookings">
+          <div class="bignum-label">Cost per Qualified Booking</div>
+          <div class="bignum-value" id="bn-cpqbooking">–</div>
+          <div class="bignum-delta" id="bn-cpqbooking-delta"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -533,6 +552,8 @@
             <th data-key="cpqmql">Cost / Qualified MQL</th>
             <th data-key="booked">Bookings</th>
             <th data-key="cpbooking">Cost / Booking</th>
+            <th data-key="qbooked">Qualified Bookings</th>
+            <th data-key="cpqbooking">Cost / Qualified Booking</th>
           </tr>
         </thead>
         <tbody id="perf-table-body"></tbody>
@@ -570,6 +591,8 @@
             <th data-key="cpqmql">Cost / Qualified MQL</th>
             <th data-key="booked">Bookings</th>
             <th data-key="cpbooking">Cost / Booking</th>
+            <th data-key="qbooked">Qualified Bookings</th>
+            <th data-key="cpqbooking">Cost / Qualified Booking</th>
             <th data-key="hookRate">Hook Rate</th>
             <th data-key="bounceRate">Bounce Rate (PostHog)</th>
           </tr>
@@ -661,7 +684,9 @@ const METRIC_OPTIONS = [
   { key: 'mqlNo', label: 'Spam', fmt: 'int' },
   { key: 'cpsch', label: 'Cost per Real MQL', fmt: 'money' },
   { key: 'booked', label: 'Bookings', fmt: 'int' },
-  { key: 'cpbooking', label: 'Cost per Booking', fmt: 'money' }
+  { key: 'cpbooking', label: 'Cost per Booking', fmt: 'money' },
+  { key: 'qbooked', label: 'Qualified Bookings', fmt: 'int' },
+  { key: 'cpqbooking', label: 'Cost per Qualified Booking', fmt: 'money' }
 ];
 
 // para el gráfico de Spend/CPSCH -- compute() trabaja sobre las sumas crudas de un bucket
@@ -679,9 +704,11 @@ const CHART_METRICS = {
   mqlQualified: { label: 'Qualified MQLs', fmt: 'int', compute: s => s.mqlQualified },
   cpqmql:     { label: 'Cost per Qualified MQL', fmt: 'money', compute: s => safeDiv(s.spend, s.mqlQualified) },
   booked:     { label: 'Bookings', fmt: 'int', compute: s => s.booked },
-  cpbooking:  { label: 'Cost per Booking', fmt: 'money', compute: s => safeDiv(s.spend, s.booked) }
+  cpbooking:  { label: 'Cost per Booking', fmt: 'money', compute: s => safeDiv(s.spend, s.booked) },
+  qbooked:    { label: 'Qualified Bookings', fmt: 'int', compute: s => s.qbooked },
+  cpqbooking: { label: 'Cost per Qualified Booking', fmt: 'money', compute: s => safeDiv(s.spend, s.qbooked) }
 };
-const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'reach', 'frequency', 'bounceRate', 'mqlYes', 'cpsch', 'mqlNo', 'mqlQualified', 'cpqmql', 'booked', 'cpbooking'];
+const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'reach', 'frequency', 'bounceRate', 'mqlYes', 'cpsch', 'mqlNo', 'mqlQualified', 'cpqmql', 'booked', 'cpbooking', 'qbooked', 'cpqbooking'];
 
 let UNIFIED = []; // flat rows at Date x Account x Campaign x AdSet x Ad grain
 let charts = {};
@@ -996,10 +1023,11 @@ function mergeSources(metaRows, phRows, icRows) {
   const icMap = new Map();
   icRows.forEach(r => {
     const key = r.date + '' + r.ad;
-    const prev = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, account: r.account, campaign: r.campaign, adset: r.adset, date: r.date, ad: r.ad };
+    const prev = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0, account: r.account, campaign: r.campaign, adset: r.adset, date: r.date, ad: r.ad };
     if (r.mql === 'yes') prev.mqlYes++; else if (r.mql === 'no') prev.mqlNo++; else prev.mqlBlank++;
     if (r.qualified) prev.mqlQualified++;
     if (r.booked) prev.booked++;
+    if (r.booked && r.qualified) prev.qbooked++;
     icMap.set(key, prev);
   });
 
@@ -1010,10 +1038,10 @@ function mergeSources(metaRows, phRows, icRows) {
     const key = r.date + '' + r.ad;
     seen.add(key);
     const ph = phMap.get(key) || { sessions: 0, bounced: 0 };
-    const ic = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0 };
+    const ic = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0 };
     rows.push(Object.assign({}, r, {
       sessions: ph.sessions, bounced: ph.bounced,
-      mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified, booked: ic.booked
+      mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified, booked: ic.booked, qbooked: ic.qbooked
     }));
   });
 
@@ -1026,7 +1054,7 @@ function mergeSources(metaRows, phRows, icRows) {
     rows.push({
       date: ic.date, account: ic.account, campaign: ic.campaign, adset: ic.adset, ad: ic.ad,
       spend: 0, impressions: 0, clicks: 0, reach: 0, frequency: 0, lpViews: 0, registrations: 0, schedulesMeta: 0, videoViews: 0,
-      sessions: 0, bounced: 0, mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified, booked: ic.booked
+      sessions: 0, bounced: 0, mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified, booked: ic.booked, qbooked: ic.qbooked
     });
   });
   if (unmatched > 0) console.warn('iClosed: ' + unmatched + ' rows (Date+Ad) with no match in Meta_Raw -- check ad names.');
@@ -1170,11 +1198,13 @@ function getFilteredIClosedContacts() {
 }
 
 function sumIClosedContacts(contacts) {
-  const s = { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0 };
+  const s = { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0, realMqlQual: 0 };
   contacts.forEach(c => {
     if (c.mql === 'yes') s.mqlYes++; else if (c.mql === 'no') s.mqlNo++; else s.mqlBlank++;
     if (c.qualified) s.mqlQualified++;
     if (c.booked) s.booked++;
+    if (c.booked && c.qualified) s.qbooked++;
+    if (c.mql === 'yes' && c.qualified) s.realMqlQual++; // Real MQL que además son qualified (para el resaltado del funnel)
   });
   return s;
 }
@@ -1185,10 +1215,11 @@ function bucketIClosedContacts(contacts) {
   const buckets = new Map();
   contacts.forEach(c => {
     const key = granularity === 'weekly' ? isoWeekStart(c.date) : c.date;
-    const prev = buckets.get(key) || { mqlYes: 0, mqlNo: 0, mqlQualified: 0, booked: 0 };
+    const prev = buckets.get(key) || { mqlYes: 0, mqlNo: 0, mqlQualified: 0, booked: 0, qbooked: 0 };
     if (c.mql === 'yes') prev.mqlYes++; else if (c.mql === 'no') prev.mqlNo++;
     if (c.qualified) prev.mqlQualified++;
     if (c.booked) prev.booked++;
+    if (c.booked && c.qualified) prev.qbooked++;
     buckets.set(key, prev);
   });
   return buckets;
@@ -1262,7 +1293,7 @@ function safeDiv(a, b) { return b > 0 ? a / b : 0; }
 // ===================== AGGREGATION =====================
 
 function sumRows(rows) {
-  const s = { spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, registrations: 0, schedulesMeta: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, videoViews: 0, sessions: 0, bounced: 0 };
+  const s = { spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, registrations: 0, schedulesMeta: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0, videoViews: 0, sessions: 0, bounced: 0 };
   rows.forEach(r => { Object.keys(s).forEach(k => s[k] += (r[k] || 0)); });
   return s;
 }
@@ -1285,7 +1316,8 @@ function aggregateByAd(rows) {
       bounceRate: safeDiv(s.bounced, s.sessions),
       cpsch: safeDiv(s.spend, s.mqlYes),
       cpqmql: safeDiv(s.spend, s.mqlQualified),
-      cpbooking: safeDiv(s.spend, s.booked)
+      cpbooking: safeDiv(s.spend, s.booked),
+      cpqbooking: safeDiv(s.spend, s.qbooked)
     });
   });
 }
@@ -1312,9 +1344,11 @@ function renderBigNumbers(rows) {
   document.getElementById('bn-cpqmql').textContent = fmtMoney(safeDiv(s.spend, ic.mqlQualified));
   document.getElementById('bn-booked').textContent = fmtInt(ic.booked);
   document.getElementById('bn-cpbooking').textContent = fmtMoney(safeDiv(s.spend, ic.booked));
+  document.getElementById('bn-qbooked').textContent = fmtInt(ic.qbooked);
+  document.getElementById('bn-cpqbooking').textContent = fmtMoney(safeDiv(s.spend, ic.qbooked));
 
   const compareEl = document.getElementById('compare-range-label');
-  const deltaKeys = ['spend', 'clicks', 'cpm', 'ctr', 'cp1kreach', 'frequency', 'funnelcvr', 'real-mql', 'spam', 'cpsch', 'qualified-mql', 'cpqmql', 'booked', 'cpbooking'];
+  const deltaKeys = ['spend', 'clicks', 'cpm', 'ctr', 'cp1kreach', 'frequency', 'funnelcvr', 'real-mql', 'spam', 'cpsch', 'qualified-mql', 'cpqmql', 'booked', 'cpbooking', 'qbooked', 'cpqbooking'];
 
   if (!filterState.compare || !filterState.dateFrom || !filterState.dateTo) {
     deltaKeys.forEach(k => {
@@ -1360,6 +1394,8 @@ function renderBigNumbers(rows) {
   const prevCpqmql = safeDiv(p.spend, pIc.mqlQualified);
   const curCpbooking = safeDiv(s.spend, ic.booked);
   const prevCpbooking = safeDiv(p.spend, pIc.booked);
+  const curCpqbooking = safeDiv(s.spend, ic.qbooked);
+  const prevCpqbooking = safeDiv(p.spend, pIc.qbooked);
 
   setDelta('spend', s.spend, p.spend, 'neutral');
   setDelta('clicks', s.clicks, p.clicks, 'up-good');
@@ -1375,6 +1411,8 @@ function renderBigNumbers(rows) {
   setDelta('cpqmql', curCpqmql, prevCpqmql, 'up-bad');
   setDelta('booked', ic.booked, pIc.booked, 'up-good');
   setDelta('cpbooking', curCpbooking, prevCpbooking, 'up-bad');
+  setDelta('qbooked', ic.qbooked, pIc.qbooked, 'up-good');
+  setDelta('cpqbooking', curCpqbooking, prevCpqbooking, 'up-bad');
 
   if (compareEl) compareEl.textContent = 'Comparing to ' + prevFrom + ' – ' + prevTo;
 }
@@ -1430,7 +1468,7 @@ function renderSpendChart(rows) {
   const buckets = new Map();
   rows.forEach(r => {
     const key = granularity === 'weekly' ? isoWeekStart(r.date) : r.date;
-    const prev = buckets.get(key) || { spend: 0, impressions: 0, clicks: 0, reach: 0, bounced: 0, sessions: 0, mqlYes: 0, mqlNo: 0, mqlQualified: 0, booked: 0 };
+    const prev = buckets.get(key) || { spend: 0, impressions: 0, clicks: 0, reach: 0, bounced: 0, sessions: 0, mqlYes: 0, mqlNo: 0, mqlQualified: 0, booked: 0, qbooked: 0 };
     prev.spend += r.spend || 0; prev.impressions += r.impressions || 0; prev.clicks += r.clicks || 0;
     prev.reach += r.reach || 0; prev.bounced += r.bounced || 0; prev.sessions += r.sessions || 0;
     buckets.set(key, prev);
@@ -1439,7 +1477,7 @@ function renderSpendChart(rows) {
   // bucketIClosedContacts) -- sumar directo de `rows` cuenta doble a los multi-touch.
   bucketIClosedContacts(getFilteredIClosedContacts()).forEach((icBucket, key) => {
     const prev = buckets.get(key) || { spend: 0, impressions: 0, clicks: 0, reach: 0, bounced: 0, sessions: 0 };
-    prev.mqlYes = icBucket.mqlYes; prev.mqlNo = icBucket.mqlNo; prev.mqlQualified = icBucket.mqlQualified; prev.booked = icBucket.booked;
+    prev.mqlYes = icBucket.mqlYes; prev.mqlNo = icBucket.mqlNo; prev.mqlQualified = icBucket.mqlQualified; prev.booked = icBucket.booked; prev.qbooked = icBucket.qbooked;
     buckets.set(key, prev);
   });
   const labels = Array.from(buckets.keys()).sort();
@@ -1539,6 +1577,7 @@ const METRIC_DIRECTION = {
   reach: 'up-good', frequency: 'up-good', lpViews: 'up-good', registrations: 'up-good',
   mqlYes: 'up-good', mqlNo: 'up-bad', mqlBlank: 'neutral', cpsch: 'up-bad',
   mqlQualified: 'up-good', cpqmql: 'up-bad', booked: 'up-good', cpbooking: 'up-bad',
+  qbooked: 'up-good', cpqbooking: 'up-bad',
   hookRate: 'up-good', bounceRate: 'up-bad', cp1kreach: 'up-bad', funnelcvr: 'up-good'
 };
 
@@ -1570,7 +1609,8 @@ const CREATIVE_NUM_COLUMNS = [
   { key: 'frequency', fmt: 'dec' }, { key: 'lpViews', fmt: 'int' }, { key: 'registrations', fmt: 'int' },
   { key: 'mqlYes', fmt: 'int' }, { key: 'mqlNo', fmt: 'int' }, { key: 'mqlBlank', fmt: 'int' },
   { key: 'cpsch', fmt: 'money' }, { key: 'mqlQualified', fmt: 'int' }, { key: 'cpqmql', fmt: 'money' },
-  { key: 'booked', fmt: 'int' }, { key: 'cpbooking', fmt: 'money' }, { key: 'hookRate', fmt: 'pct' },
+  { key: 'booked', fmt: 'int' }, { key: 'cpbooking', fmt: 'money' },
+  { key: 'qbooked', fmt: 'int' }, { key: 'cpqbooking', fmt: 'money' }, { key: 'hookRate', fmt: 'pct' },
   { key: 'bounceRate', fmt: 'pct' }
 ];
 let highlightedAd = null; // ad seleccionado desde un click en el scatter -- resaltado en esta tabla
@@ -1762,10 +1802,12 @@ function renderFunnel(rows) {
     { label: 'Clicks', value: s.clicks, color: 'var(--funnel-2)' },
     { label: 'LP Views', value: s.lpViews, color: 'var(--funnel-3)' },
     { label: 'Registrations (all MQLs)', value: ic.mqlYes + ic.mqlNo + ic.mqlBlank, color: 'var(--funnel-4)' },
-    { label: 'Real MQL', value: ic.mqlYes, color: 'var(--funnel-5)' },
+    // qual = subconjunto de ESTA barra que además es qualified (Lead Score A/B); se resalta dentro
+    // de la barra + se aclara al lado. Real MQL -> Real MQL que son qualified; Booked -> qualified bookings.
+    { label: 'Real MQL', value: ic.mqlYes, color: 'var(--funnel-5)', qual: ic.realMqlQual, qualLabel: 'Qualified Lead' },
     // Booked ⊆ Real MQL, así que el funnel sigue siendo monotónico. Verde (--series-2, el
     // color "positivo" de marca) para que el paso final de conversión se distinga del gradiente violeta.
-    { label: 'Booked', value: ic.booked, color: 'var(--series-2)' }
+    { label: 'Booked', value: ic.booked, color: 'var(--series-2)', qual: ic.qbooked, qualLabel: 'Qualified Booking' }
   ];
   // El largo de barra usa escala LOGARÍTMICA, no lineal: el rango va de ~157k impresiones a
   // ~12 bookings, así que en lineal MQL/Booked quedaban slivers invisibles. Con log cada etapa
@@ -1776,10 +1818,17 @@ function renderFunnel(rows) {
   body.innerHTML = stages.map((st, i) => {
     const widthPct = st.value > 0 ? Math.max(6, (Math.log10(st.value + 1) / maxLog) * 100) : 2;
     const pctOfPrev = i === 0 ? null : safeDiv(st.value, stages[i - 1].value);
+    // resaltado qualified dentro de la barra + aclaración al costado (solo en las etapas con `qual`)
+    const hasQual = st.qual != null;
+    const qualFrac = hasQual && st.value > 0 ? safeDiv(st.qual, st.value) : 0;
+    const qualInner = hasQual ? `<div class="funnel-bar-qual" style="width:${qualFrac * 100}%"></div>` : '';
+    const qualNote = hasQual
+      ? `<span class="funnel-qual-note"><span class="funnel-qual-swatch"></span>${st.qualLabel}: ${fmtInt(st.qual)} (${fmtPct(qualFrac)})</span>`
+      : '';
     return `
       <div class="funnel-row">
         <div class="funnel-label">${st.label}</div>
-        <div class="funnel-bar-track"><div class="funnel-bar" style="width:${widthPct}%; background:${st.color}"></div></div>
+        <div class="funnel-bar-track"><div class="funnel-bar" style="width:${widthPct}%; background:${st.color}">${qualInner}</div>${qualNote}</div>
         <div class="funnel-value">${fmtInt(st.value)}</div>
         <div class="funnel-pct">${pctOfPrev == null ? '' : fmtPct(pctOfPrev)}</div>
       </div>`;
@@ -1806,7 +1855,9 @@ const PERF_COLUMNS = [
   { key: 'mqlQualified', fmt: 'int' },
   { key: 'cpqmql', fmt: 'money' },
   { key: 'booked', fmt: 'int' },
-  { key: 'cpbooking', fmt: 'money' }
+  { key: 'cpbooking', fmt: 'money' },
+  { key: 'qbooked', fmt: 'int' },
+  { key: 'cpqbooking', fmt: 'money' }
 ];
 
 // Desglose de los Big Numbers por Account/Campaign/Ad Set. Las métricas de Meta (spend,
@@ -1819,7 +1870,7 @@ function computePerfRows(rows, contacts) {
   const groups = new Map();
   const ensure = (v) => {
     const key = v || '(unattributed)';
-    if (!groups.has(key)) groups.set(key, { name: key, spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0 });
+    if (!groups.has(key)) groups.set(key, { name: key, spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0 });
     return groups.get(key);
   };
 
@@ -1843,6 +1894,7 @@ function computePerfRows(rows, contacts) {
       if (c.mql === 'yes') g.mqlYes++; else if (c.mql === 'no') g.mqlNo++; else g.mqlBlank++;
       if (c.qualified) g.mqlQualified++;
       if (c.booked) g.booked++;
+      if (c.booked && c.qualified) g.qbooked++;
     });
   });
 
@@ -1856,7 +1908,8 @@ function computePerfRows(rows, contacts) {
       funnelcvr: safeDiv(g.mqlYes, g.lpViews),
       cpsch: safeDiv(g.spend, g.mqlYes),
       cpqmql: safeDiv(g.spend, g.mqlQualified),
-      cpbooking: safeDiv(g.spend, g.booked)
+      cpbooking: safeDiv(g.spend, g.booked),
+      cpqbooking: safeDiv(g.spend, g.qbooked)
     }));
 }
 

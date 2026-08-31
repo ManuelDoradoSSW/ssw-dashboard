@@ -122,6 +122,14 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
   y en lineal MQL/Booked quedaban slivers invisibles -- con log cada etapa se ve y sigue
   angostando. Barras centradas (`margin:0 auto`) para el look de embudo. Los conteos y el % de
   conversión al costado son los valores exactos; hay un caveat visible que aclara la escala log.
+  **Resaltado qualified (2026-08-26)**: dentro de la barra Real MQL se resalta en CELESTE
+  (`--qual-highlight`, pegado al borde DERECHO de la barra) la porción que son Real MQL **y**
+  qualified (Lead Score A/B) -- `ic.realMqlQual`, que es la INTERSECCIÓN (mql yes && qualified), NO
+  el `mqlQualified` standalone (que es independiente de Real MQL) -- con una aclaración al lado
+  ("Qualified Lead: N (%)"). Ídem la barra Booked resalta los Qualified Bookings (`ic.qbooked` ->
+  "Qualified Booking: N (%)"). El ancho del resaltado es fracción LINEAL de esa barra (qual/valor),
+  no log. Clases: `.funnel-bar-qual` / `.funnel-qual-note`; color celeste `--qual-highlight` en los
+  4 bloques de tema (#1f8fd0 light / #56b6e8 dark).
 - **Qualified MQL**: `iClosed_Raw` pasó a 7 columnas (se agregó `Lead Score` como columna G,
   2026-08-06) — "Quality"/"High Quality"/similar = qualified, vacío o "Low Quality" no
   cuenta (ver §5 para el detalle exacto de la regla). Métrica independiente de Real MQL,
@@ -139,6 +147,11 @@ Apps Script solo llena la Sheet, y el navegador de cada visitante hace el resto 
   MQL: contactos deduplicados (`ICLOSED_CONTACTS`) en Big Numbers/Funnel/chart/Performance-per,
   por-ad (`aggregateByAd`) en Creative Performance/scatter. `booked` se lleva en cada contacto
   igual que `mql`/`qualified`.
+- **Qualified Bookings / Cost per Qualified Booking** (agregado 2026-08-26): igual que Booking pero
+  el contacto además tiene que ser qualified (Lead Score A o B) -- `qbooked = booked && qualified`
+  (key `qbooked`/`cpqbooking`). Se agregó en TODOS los lugares donde está Booking (Big Numbers, Spend
+  chart, Creative Performance, Performance per, scatter) y como resaltado del funnel (ver arriba).
+  Misma lógica dual que Booking.
 - **Tabla "Performance per"** (agregada 2026-08-19): card entre el Spend chart y Creative
   Performance. Selector inline en el título (Account/Campaign/Ad Set, default Account, mismo
   patrón que los selects del Spend chart) que desglosa TODOS los Big Numbers por la entidad
