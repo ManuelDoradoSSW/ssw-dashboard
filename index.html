@@ -1628,7 +1628,7 @@ function thumbCell(r) {
   if (!fresh) return '<div class="creative-thumb-wrap">' + ph + '</div>';
   const u = escapeHtml(fresh);
   return '<a href="' + u + '" target="_blank" rel="noopener"><div class="creative-thumb-wrap">'
-    + ph + '<img class="creative-thumb" src="' + u + '" alt="" onerror="this.style.display=\'none\'"></div></a>';
+    + ph + '<img class="creative-thumb" src="' + u + '" alt="" loading="lazy" decoding="async" onerror="this.style.display=\'none\'"></div></a>';
 }
 
 function renderCreativeTable(rows) {
