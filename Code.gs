@@ -267,10 +267,9 @@ function fetchAccountCreatives(account, token) {
 function writeWholeSheet(sheetName, headers, rows) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(sheetName);
-  if (!sheet) {
-    sheet = ss.insertSheet(sheetName);
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  }
+  if (!sheet) sheet = ss.insertSheet(sheetName);
+  if (sheet.getMaxColumns() < headers.length) sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]); // reescribe el header (idempotente; agrega cols nuevas como Email)
   var maxRows = sheet.getMaxRows();
   if (maxRows > 1) sheet.getRange(2, 1, maxRows - 1, headers.length).clearContent();
   if (rows.length > 0) sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
@@ -292,9 +291,11 @@ var ICLOSED_BASE_URL = 'https://public.api.iclosed.io';
 
 // --- Sync automático NUEVO (2026-08-21), escribe a una tab APARTE para validar antes de migrar ---
 var ICLOSED_AUTO_SHEET = 'iClosed_Auto';
-// mismas 9 columnas que la tab histórica + Contact ID (col J) como llave de merge. El dashboard
-// ignora la col J (lee hasta la I).
-var ICLOSED_AUTO_HEADERS = ['Date', 'Account', 'Campaign', 'Ad Set', 'Ad', 'Real MQL', 'Lead Score', 'Scheduling status', 'Event', 'Contact ID'];
+// mismas 9 columnas que la tab histórica + Contact ID (col J) como llave de merge + Email (col K)
+// para cruzar audits + Audit (col L) manual. IMPORTANTE: Audit tiene que estar en los headers para
+// que el rewrite lo preserve POR Contact ID (sino, al reordenarse las filas, el YES se desalinea).
+// La API nunca toca Audit: se lee de la hoja y se reescribe en su fila. El dashboard ignora J/K/L.
+var ICLOSED_AUTO_HEADERS = ['Date', 'Account', 'Campaign', 'Ad Set', 'Ad', 'Real MQL', 'Lead Score', 'Scheduling status', 'Event', 'Contact ID', 'Email', 'Audit'];
 var ICLOSED_AUTO_WINDOW_DAYS = 14; // ventana (por joinedTime) que se re-sincroniza cada corrida; es MERGE, no reemplazo
 // Fecha de corte: la API es la fuente DESDE acá en adelante. Debe coincidir con ICLOSED_CUTOVER del
 // dashboard (index.html). El sync nunca procesa contactos creados antes -> el histórico queda 100%
@@ -389,6 +390,7 @@ function runIClosedAuto(since, until) {
       // persistente y lista TODAS las calls (Call A/B). /v1/eventCalls traía muy pocas (bug).
       var eventName = contactEventNames(c.ContactEvents);
       var status = c.status || detail.status || '';
+      var email = detail.email || pickEmail(c);
       var prev = byId[id];
 
       if (!prev) {
@@ -397,11 +399,13 @@ function runIClosedAuto(since, until) {
           'Account': '',
           'Campaign': utm.campaign, 'Ad Set': utm.medium, 'Ad': utm.content,
           'Real MQL': detail.realMql, 'Lead Score': detail.leadScore,
-          'Scheduling status': status, 'Event': eventName, 'Contact ID': id
+          'Scheduling status': status, 'Event': eventName, 'Contact ID': id, 'Email': email, 'Audit': ''
         };
       } else {
         prev['Real MQL'] = detail.realMql;   // siempre el último
         prev['Lead Score'] = detail.leadScore;
+        if (email) prev['Email'] = email;    // se rellena/actualiza si la API lo trae; no se pisa con vacío
+        // prev['Audit'] NO se toca: es manual (viene de la hoja vía readSheetAsObjects) y se preserva por Contact ID
         // UTM: no se pisan si ya tienen valor, pero SÍ se rellenan si estaban vacíos (ej. un
         // contacto que primero vino sin UTM en el referrer y después aparece el utm de la call).
         if (!prev['Campaign'] && utm.campaign) prev['Campaign'] = utm.campaign;
@@ -472,9 +476,29 @@ function fetchIClosedDetail(contactId, apiKey) {
     joinedTime: d.joinedTime || d.createdAt || '',
     referrerUrl: d.referrerUrl || '',
     status: d.status || '',
+    email: pickEmail(d),
     realMql: findCustomFieldAnswer(assoc, 'real-mql'),
     leadScore: findCustomFieldAnswer(assoc, 'lead-score')
   };
+}
+
+// El nombre exacto del campo email en la API de iClosed no está 100% confirmado, así que se prueban
+// las variantes comunes y, si ninguna matchea, se escanea cualquier key top-level que contenga
+// "email" con un "@". Se auto-corrige sin importar el casing que use la API.
+function pickEmail(obj) {
+  if (!obj) return '';
+  var direct = obj.email || obj.Email || obj.contactEmail || obj.emailAddress || obj.primaryEmail;
+  if (direct && typeof direct === 'string') return direct;
+  if (Array.isArray(obj.emails) && obj.emails.length) {
+    var e0 = obj.emails[0];
+    if (typeof e0 === 'string') return e0;
+    if (e0 && e0.email) return e0.email;
+  }
+  for (var k in obj) {
+    var v = obj[k];
+    if (/email/i.test(k) && typeof v === 'string' && v.indexOf('@') !== -1) return v;
+  }
+  return '';
 }
 
 // Nombres de las call(s) del contacto (columna Event), a partir de ContactEvents (item de lista
@@ -538,7 +562,8 @@ function readSheetAsObjects(sheetName, headers) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
   var data = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
-  var idIdx = headers.length - 1; // Contact ID es la última columna
+  var idIdx = headers.indexOf('Contact ID'); // llave de merge (ya no es forzosamente la última col: Email va después)
+  if (idIdx < 0) idIdx = headers.length - 1;
   return data.filter(function (row) { return row[idIdx] !== '' && row[idIdx] != null; }).map(function (row) {
     var obj = {};
     headers.forEach(function (h, i) { obj[h] = row[i]; });

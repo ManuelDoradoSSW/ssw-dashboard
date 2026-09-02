@@ -591,3 +591,46 @@ Pendiente opcional (no pedido, solo sugerido si surge la oportunidad):
 - **Antes de dar un cambio por terminado**: siempre levantar un server local y probar en
   el Browser pane (no alcanza con leer el código) — este dashboard tuvo varios bugs que
   solo aparecían en el navegador real (ver §6).
+
+## 9. Columnas Email + Audit (iClosed) y stage de Audits — PENDIENTE de cablear al dash
+
+**Contexto (2026-09-01):** se está agregando "Audit" como un stage más abajo en el funnel
+(después de Booked): a algunos leads se les audita la cuenta. Esa instancia NO vive en
+iClosed, así que se carga **manual** en la Sheet (pocos, ~3-4/semana). Cohorteado por lead
+creation date por definición (misma fila del contacto).
+
+**Ya hecho (backend, en `Code.gs` — ya en Apps Script):**
+- Columna **`Email`** agregada a `ICLOSED_AUTO_HEADERS` (col K, después de Contact ID). Se
+  llena desde la API vía el helper `pickEmail()` (prueba `email`/`contactEmail`/`emailAddress`/…
+  y como fallback escanea cualquier key con "email" y un "@"). Confirmado que trae mails OK.
+- Columna **`Audit`** agregada a `ICLOSED_AUTO_HEADERS` (col L, última). Es 100% manual: la
+  API nunca la toca. **Crítico**: está en los headers a propósito para que `writeWholeSheet`
+  la preserve POR Contact ID en cada rewrite (sino, al reordenarse las filas numéricamente
+  por Contact ID cuando entra un contacto nuevo, el "YES" se pegaría a la fila equivocada).
+- `readSheetAsObjects` ahora ubica Contact ID por nombre (`headers.indexOf('Contact ID')`),
+  no como "última columna" (porque Email/Audit ahora van después).
+- `writeWholeSheet` ahora reescribe el header siempre (idempotente) y agrega columnas
+  físicas si faltan.
+- Ambas columnas también agregadas MANUALMENTE al final de la tab histórica
+  (`iClosed_historical_donotchange`) por el usuario. El dashboard ignora col ≥ 9 (lee hasta
+  `c[8]`=Event), así que Email/Audit/Contact ID no afectan el parsing actual.
+
+**Cómo se carga Audit:** el usuario pone `YES` en la fila del contacto que tuvo audit; la que
+no, la deja vacía. En ambas tabs (histórica y auto).
+
+**Stage de Audits en el dashboard — PENDIENTE (esperar a que haya data cargada):**
+Decisiones ya confirmadas con el usuario (2026-09-01):
+- **Definición**: un Audit = contacto con **Audit == "YES"** (case-insensitive), contado 1 vez
+  por contacto, atribuido por sus UTMs (misma lógica que MQL/Booking), cohorteado por lead
+  creation date. **Sin gates extra** (el YES ya implica que pasó — NO exige Real MQL=Yes).
+- **Métricas**: solo **Audits** + **Cost per Audit**. **NO** hacer variante Qualified Audits
+  (a diferencia de Bookings, que sí tiene Qualified).
+- **Dónde va** (cuando se cablee, replicando el patrón de Booking): parsear col Audit en
+  `loadAll` (índice depende del layout final de cada tab — validar por header/posición, no
+  hardcodear ciegamente); agregar keys `audit` y `cpaudit` a sumRows, aggregateByAd,
+  sumIClosedContacts, bucketIClosedContacts, mergeSources, renderSpendChart buckets,
+  CHART_METRICS/CHART_METRIC_KEYS/METRIC_OPTIONS/METRIC_DIRECTION, CREATIVE_NUM_COLUMNS,
+  PERF_COLUMNS, computePerfRows, ambos theads, 2 tiles nuevos en Big Numbers; y un step
+  "Audit" en el funnel después de Booked (sin resaltado celeste, porque no hay Qualified Audit).
+- El usuario eligió **esperar** a tener algunos YES cargados antes de cablearlo (así se ve
+  con data real, no en 0).
