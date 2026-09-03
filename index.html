@@ -485,7 +485,7 @@
           <div class="bignum-value" id="bn-cpqmql">–</div>
           <div class="bignum-delta" id="bn-cpqmql-delta"></div>
         </div>
-        <div class="bignum-tile" data-tooltip="Real MQL + Discovery Call Booked + Call A only (not B)">
+        <div class="bignum-tile" data-tooltip="Real MQL + Discovery Call Booked + Call A only (not B), o Audit = YES (todo audit tuvo un booking). Deduplicado por contacto.">
           <div class="bignum-label">Bookings</div>
           <div class="bignum-value" id="bn-booked">–</div>
           <div class="bignum-delta" id="bn-booked-delta"></div>
@@ -962,7 +962,11 @@ async function loadAll() {
     const eventUpper = cellStr(r.c[8]).toUpperCase();
     const hasCallA = /\bCALL A\b/.test(eventUpper);
     const hasCallB = /\bCALL B\b/.test(eventUpper);
-    const booked = mql === 'yes' && schedStatus === 'DISCOVERY CALL BOOKED' && hasCallA && !hasCallB;
+    const strictBooked = mql === 'yes' && schedStatus === 'DISCOVERY CALL BOOKED' && hasCallA && !hasCallB;
+    // Todo audit tuvo por definición un booking en algún momento (aunque el snapshot de iClosed ya
+    // no lo refleje con el estado/Event estricto), así que Audit=YES también cuenta como Booked.
+    // Esto mantiene el funnel monótono (Audit ⊆ Booked).
+    const booked = strictBooked || audit;
     const ads = adCandidates.length ? adCandidates : ['(unattributed)'];
     // icRowId identifica la fila ORIGINAL de iClosed (antes de explotar por ad) -- un contacto
     // multi-touch genera varias filas acá (una por ad tocado) para que cada ad reciba su crédito en
