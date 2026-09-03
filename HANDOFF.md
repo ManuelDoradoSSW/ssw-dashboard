@@ -592,7 +592,7 @@ Pendiente opcional (no pedido, solo sugerido si surge la oportunidad):
   el Browser pane (no alcanza con leer el código) — este dashboard tuvo varios bugs que
   solo aparecían en el navegador real (ver §6).
 
-## 9. Columnas Email + Audit (iClosed) y stage de Audits — PENDIENTE de cablear al dash
+## 9. Columnas Email + Audit (iClosed) y stage de Audits — CABLEADO Y EN VIVO (2026-09-03)
 
 **Contexto (2026-09-01):** se está agregando "Audit" como un stage más abajo en el funnel
 (después de Booked): a algunos leads se les audita la cuenta. Esa instancia NO vive en
@@ -618,19 +618,33 @@ creation date por definición (misma fila del contacto).
 **Cómo se carga Audit:** el usuario pone `YES` en la fila del contacto que tuvo audit; la que
 no, la deja vacía. En ambas tabs (histórica y auto).
 
-**Stage de Audits en el dashboard — PENDIENTE (esperar a que haya data cargada):**
-Decisiones ya confirmadas con el usuario (2026-09-01):
-- **Definición**: un Audit = contacto con **Audit == "YES"** (case-insensitive), contado 1 vez
-  por contacto, atribuido por sus UTMs (misma lógica que MQL/Booking), cohorteado por lead
-  creation date. **Sin gates extra** (el YES ya implica que pasó — NO exige Real MQL=Yes).
-- **Métricas**: solo **Audits** + **Cost per Audit**. **NO** hacer variante Qualified Audits
-  (a diferencia de Bookings, que sí tiene Qualified).
-- **Dónde va** (cuando se cablee, replicando el patrón de Booking): parsear col Audit en
-  `loadAll` (índice depende del layout final de cada tab — validar por header/posición, no
-  hardcodear ciegamente); agregar keys `audit` y `cpaudit` a sumRows, aggregateByAd,
-  sumIClosedContacts, bucketIClosedContacts, mergeSources, renderSpendChart buckets,
-  CHART_METRICS/CHART_METRIC_KEYS/METRIC_OPTIONS/METRIC_DIRECTION, CREATIVE_NUM_COLUMNS,
-  PERF_COLUMNS, computePerfRows, ambos theads, 2 tiles nuevos en Big Numbers; y un step
-  "Audit" en el funnel después de Booked (sin resaltado celeste, porque no hay Qualified Audit).
-- El usuario eligió **esperar** a tener algunos YES cargados antes de cablearlo (así se ve
-  con data real, no en 0).
+**Stage de Audits en el dashboard — YA CABLEADO (index.html, en vivo).**
+Definición y decisiones confirmadas con el usuario:
+- **Audit = contacto con `Audit == "YES"`** (case-insensitive), contado 1 vez por contacto,
+  atribuido por sus UTMs (misma lógica que MQL/Booking), cohorteado por lead creation date.
+  Sin gates extra propios (el YES ya implica que pasó).
+- **Índice de la col Audit se resuelve POR HEADER en cada tab** (`headerIndex(table,'Audit')`),
+  NO por índice fijo: la histórica NO tiene Contact ID (Audit cae en índice 10) y la auto SÍ
+  (Audit en índice 11). Cada fila se envuelve `{ r, audit }` antes de mezclar los dos sets.
+- **Métricas**: solo **Audits** (`audit`) + **Cost per Audit** (`cpaudit`). NO hay Qualified
+  Audits. Están en: 2 tiles de Big Numbers (`bn-audit`/`bn-cpaudit` + delta en Compare),
+  Performance per, Creative Performance, selector del Spend chart, scatter (METRIC_OPTIONS),
+  y un step **"Audit"** en el funnel después de Booked (color `--series-1`, sin resaltado
+  celeste porque no hay qualified audit). Keys agregadas en: sumRows, aggregateByAd,
+  sumIClosedContacts, bucketIClosedContacts, mergeSources (icMap + ambos push), buckets del
+  Spend chart, CHART_METRICS/CHART_METRIC_KEYS/METRIC_OPTIONS/METRIC_DIRECTION,
+  CREATIVE_NUM_COLUMNS, PERF_COLUMNS, computePerfRows, deltaKeys, ambos theads.
+
+**IMPORTANTE — Audit cuenta como Booked (cambio de definición de Booking):** todo audit tuvo
+por definición un booking en algún momento (aunque el snapshot de iClosed ya no lo refleje con
+el estado/Event estricto). Por eso en `icRows`:
+`const strictBooked = mql==='yes' && schedStatus==='DISCOVERY CALL BOOKED' && hasCallA && !hasCallB;`
+`const booked = strictBooked || audit;`
+Es **por contacto** (booleano), así que un contacto que es strict-booked Y audit cuenta UNA
+sola vez (dedup, sin doble conteo). Esto mantiene el funnel monótono (Audit ⊆ Booked) y hace
+que **Qualified Bookings** (`booked && qualified`) también incluya los audits qualified.
+Consecuencia: Bookings subió (ej. YTD 28 → 69), Cost per Booking bajó, Qualified Bookings subió
+(9 → 18). El tooltip del tile Bookings ya lo aclara.
+
+Verificado en vivo (YTD, 2026-09-03): 72 audits totales (67 históricos + 5 auto); YTD Booked=69,
+Audit=48, both=48 (todos los audits ⊆ booked, dedup OK); funnel monótono.
