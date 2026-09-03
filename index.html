@@ -152,6 +152,23 @@
     gap: 12px;
     align-items: flex-end;
   }
+
+  .cohort-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 14px;
+    padding: 10px 12px;
+    background: var(--highlight-bg);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--series-1);
+    border-radius: 8px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+  .cohort-note strong { color: var(--text); font-weight: 600; }
+  .cohort-note-icon { color: var(--series-1); font-size: 14px; line-height: 1.3; flex-shrink: 0; }
   .filter-group { display: flex; flex-direction: column; gap: 4px; }
   .filter-group label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; font-weight: 700; }
   input[type=date], select, button {
@@ -407,6 +424,10 @@
       <label>Custom to</label>
       <input type="date" id="f-compare-to">
     </div>
+  </div>
+  <div class="cohort-note">
+    <span class="cohort-note-icon" aria-hidden="true">ⓘ</span>
+    <span>All data in this dashboard is cohorted to <strong>lead creation date</strong> — every metric (including MQLs, Bookings and Audits) is attributed to the date the lead was created, not the date of the event.</span>
   </div>
   <p class="compare-range" id="compare-range-label"></p>
 </div>
