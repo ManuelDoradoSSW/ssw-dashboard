@@ -505,6 +505,16 @@
           <div class="bignum-value" id="bn-cpqbooking">–</div>
           <div class="bignum-delta" id="bn-cpqbooking-delta"></div>
         </div>
+        <div class="bignum-tile" data-tooltip="Lead con audit de cuenta (columna Audit = YES), cohorteado por lead creation date">
+          <div class="bignum-label">Audits</div>
+          <div class="bignum-value" id="bn-audit">–</div>
+          <div class="bignum-delta" id="bn-audit-delta"></div>
+        </div>
+        <div class="bignum-tile" data-tooltip="Spend / Audits">
+          <div class="bignum-label">Cost per Audit</div>
+          <div class="bignum-value" id="bn-cpaudit">–</div>
+          <div class="bignum-delta" id="bn-cpaudit-delta"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -554,6 +564,8 @@
             <th data-key="cpbooking">Cost / Booking</th>
             <th data-key="qbooked">Qualified Bookings</th>
             <th data-key="cpqbooking">Cost / Qualified Booking</th>
+            <th data-key="audit">Audits</th>
+            <th data-key="cpaudit">Cost / Audit</th>
           </tr>
         </thead>
         <tbody id="perf-table-body"></tbody>
@@ -593,6 +605,8 @@
             <th data-key="cpbooking">Cost / Booking</th>
             <th data-key="qbooked">Qualified Bookings</th>
             <th data-key="cpqbooking">Cost / Qualified Booking</th>
+            <th data-key="audit">Audits</th>
+            <th data-key="cpaudit">Cost / Audit</th>
             <th data-key="hookRate">Hook Rate</th>
             <th data-key="bounceRate">Bounce Rate (PostHog)</th>
           </tr>
@@ -686,7 +700,9 @@ const METRIC_OPTIONS = [
   { key: 'booked', label: 'Bookings', fmt: 'int' },
   { key: 'cpbooking', label: 'Cost per Booking', fmt: 'money' },
   { key: 'qbooked', label: 'Qualified Bookings', fmt: 'int' },
-  { key: 'cpqbooking', label: 'Cost per Qualified Booking', fmt: 'money' }
+  { key: 'cpqbooking', label: 'Cost per Qualified Booking', fmt: 'money' },
+  { key: 'audit', label: 'Audits', fmt: 'int' },
+  { key: 'cpaudit', label: 'Cost per Audit', fmt: 'money' }
 ];
 
 // para el gráfico de Spend/CPSCH -- compute() trabaja sobre las sumas crudas de un bucket
@@ -706,9 +722,11 @@ const CHART_METRICS = {
   booked:     { label: 'Bookings', fmt: 'int', compute: s => s.booked },
   cpbooking:  { label: 'Cost per Booking', fmt: 'money', compute: s => safeDiv(s.spend, s.booked) },
   qbooked:    { label: 'Qualified Bookings', fmt: 'int', compute: s => s.qbooked },
-  cpqbooking: { label: 'Cost per Qualified Booking', fmt: 'money', compute: s => safeDiv(s.spend, s.qbooked) }
+  cpqbooking: { label: 'Cost per Qualified Booking', fmt: 'money', compute: s => safeDiv(s.spend, s.qbooked) },
+  audit:      { label: 'Audits', fmt: 'int', compute: s => s.audit },
+  cpaudit:    { label: 'Cost per Audit', fmt: 'money', compute: s => safeDiv(s.spend, s.audit) }
 };
-const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'reach', 'frequency', 'bounceRate', 'mqlYes', 'cpsch', 'mqlNo', 'mqlQualified', 'cpqmql', 'booked', 'cpbooking', 'qbooked', 'cpqbooking'];
+const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'reach', 'frequency', 'bounceRate', 'mqlYes', 'cpsch', 'mqlNo', 'mqlQualified', 'cpqmql', 'booked', 'cpbooking', 'qbooked', 'cpqbooking', 'audit', 'cpaudit'];
 
 let UNIFIED = []; // flat rows at Date x Account x Campaign x AdSet x Ad grain
 let charts = {};
@@ -772,6 +790,12 @@ function fetchSheetTab(sheetName) {
 
 function cellStr(c) { return (c && c.v != null) ? String(c.v) : ''; }
 function cellNum(c) { return (c && c.v != null && c.v !== '') ? Number(c.v) : 0; }
+// índice de una columna por su header (label), o -1. Las tabs de iClosed tienen la col Audit en
+// posiciones distintas (la histórica no tiene Contact ID), así que se ubica por nombre, no por índice.
+function headerIndex(table, label) {
+  if (!table || !table.cols) return -1;
+  return table.cols.findIndex(c => c && c.label && String(c.label).trim() === label);
+}
 function cellDate(c) {
   if (!c || c.v == null) return '';
   const v = c.v;
@@ -901,11 +925,21 @@ async function loadAll() {
 
   // Fuente de contactos = manual (< corte) + API (>= corte), particionado por Contact Creation Date.
   // Cada fila es UN contacto; los dos sets no se solapan por construcción, así que no hay doble conteo.
-  const icManual = (icTable ? dataRows(icTable) : []).filter(r => cellDate(r.c[0]) < ICLOSED_CUTOVER);
-  const icAuto = autoContactRows(icAutoTable).filter(r => cellDate(r.c[0]) >= ICLOSED_CUTOVER);
+  // La columna Audit (manual, YES = tuvo audit de cuenta) está en índices DISTINTOS en cada tab
+  // (la histórica no tiene Contact ID), así que se resuelve por header en cada tabla, no por índice
+  // fijo. Cada fila se envuelve con su flag audit ya calculado antes de mezclar los dos sets.
+  const auditIdxManual = headerIndex(icTable, 'Audit');
+  const auditIdxAuto = headerIndex(icAutoTable, 'Audit');
+  const isAuditYes = (r, idx) => idx >= 0 && cellStr(r.c[idx]).trim().toUpperCase() === 'YES';
+  const icManual = (icTable ? dataRows(icTable) : []).filter(r => cellDate(r.c[0]) < ICLOSED_CUTOVER)
+    .map(r => ({ r, audit: isAuditYes(r, auditIdxManual) }));
+  const icAuto = autoContactRows(icAutoTable).filter(r => cellDate(r.c[0]) >= ICLOSED_CUTOVER)
+    .map(r => ({ r, audit: isAuditYes(r, auditIdxAuto) }));
   const icSourceRows = icManual.concat(icAuto);
 
-  const icRows = icSourceRows.flatMap((r, icRowId) => {
+  const icRows = icSourceRows.flatMap((src, icRowId) => {
+    const r = src.r;
+    const audit = src.audit;
     const date = cellDate(r.c[0]);
     const icAccount = cellStr(r.c[1]);
     // campaign/adset/ad vienen como listas separadas por coma en contactos multi-touch, alineadas
@@ -938,7 +972,7 @@ async function loadAll() {
       const campaign = resolveByCrosscheck(campaignCandidates[i] || campaignCandidates[0] || '', campaignCrosscheck);
       const adset = resolveByCrosscheck(adsetCandidates[i] || adsetCandidates[0] || '', adsetCrosscheck);
       const account = icAccount || campaignToAccount.get(campaign) || '';
-      return { date, account, campaign, adset, ad: resolveAdName(rawAd, date, adsByDate), mql, qualified, booked, icRowId };
+      return { date, account, campaign, adset, ad: resolveAdName(rawAd, date, adsByDate), mql, qualified, booked, audit, icRowId };
     });
   });
 
@@ -953,7 +987,7 @@ async function loadAll() {
   const contactMap = new Map();
   icRows.forEach(r => {
     if (!contactMap.has(r.icRowId)) {
-      contactMap.set(r.icRowId, { date: r.date, mql: r.mql, qualified: r.qualified, booked: r.booked, touches: [] });
+      contactMap.set(r.icRowId, { date: r.date, mql: r.mql, qualified: r.qualified, booked: r.booked, audit: r.audit, touches: [] });
     }
     contactMap.get(r.icRowId).touches.push({ account: r.account, campaign: r.campaign, adset: r.adset });
   });
@@ -1023,11 +1057,12 @@ function mergeSources(metaRows, phRows, icRows) {
   const icMap = new Map();
   icRows.forEach(r => {
     const key = r.date + '' + r.ad;
-    const prev = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0, account: r.account, campaign: r.campaign, adset: r.adset, date: r.date, ad: r.ad };
+    const prev = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0, audit: 0, account: r.account, campaign: r.campaign, adset: r.adset, date: r.date, ad: r.ad };
     if (r.mql === 'yes') prev.mqlYes++; else if (r.mql === 'no') prev.mqlNo++; else prev.mqlBlank++;
     if (r.qualified) prev.mqlQualified++;
     if (r.booked) prev.booked++;
     if (r.booked && r.qualified) prev.qbooked++;
+    if (r.audit) prev.audit++;
     icMap.set(key, prev);
   });
 
@@ -1038,10 +1073,10 @@ function mergeSources(metaRows, phRows, icRows) {
     const key = r.date + '' + r.ad;
     seen.add(key);
     const ph = phMap.get(key) || { sessions: 0, bounced: 0 };
-    const ic = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0 };
+    const ic = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0, audit: 0 };
     rows.push(Object.assign({}, r, {
       sessions: ph.sessions, bounced: ph.bounced,
-      mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified, booked: ic.booked, qbooked: ic.qbooked
+      mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified, booked: ic.booked, qbooked: ic.qbooked, audit: ic.audit
     }));
   });
 
@@ -1054,7 +1089,7 @@ function mergeSources(metaRows, phRows, icRows) {
     rows.push({
       date: ic.date, account: ic.account, campaign: ic.campaign, adset: ic.adset, ad: ic.ad,
       spend: 0, impressions: 0, clicks: 0, reach: 0, frequency: 0, lpViews: 0, registrations: 0, schedulesMeta: 0, videoViews: 0,
-      sessions: 0, bounced: 0, mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified, booked: ic.booked, qbooked: ic.qbooked
+      sessions: 0, bounced: 0, mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified, booked: ic.booked, qbooked: ic.qbooked, audit: ic.audit
     });
   });
   if (unmatched > 0) console.warn('iClosed: ' + unmatched + ' rows (Date+Ad) with no match in Meta_Raw -- check ad names.');
@@ -1198,12 +1233,13 @@ function getFilteredIClosedContacts() {
 }
 
 function sumIClosedContacts(contacts) {
-  const s = { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0, realMqlQual: 0 };
+  const s = { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0, audit: 0, realMqlQual: 0 };
   contacts.forEach(c => {
     if (c.mql === 'yes') s.mqlYes++; else if (c.mql === 'no') s.mqlNo++; else s.mqlBlank++;
     if (c.qualified) s.mqlQualified++;
     if (c.booked) s.booked++;
     if (c.booked && c.qualified) s.qbooked++;
+    if (c.audit) s.audit++;
     if (c.mql === 'yes' && c.qualified) s.realMqlQual++; // Real MQL que además son qualified (para el resaltado del funnel)
   });
   return s;
@@ -1215,11 +1251,12 @@ function bucketIClosedContacts(contacts) {
   const buckets = new Map();
   contacts.forEach(c => {
     const key = granularity === 'weekly' ? isoWeekStart(c.date) : c.date;
-    const prev = buckets.get(key) || { mqlYes: 0, mqlNo: 0, mqlQualified: 0, booked: 0, qbooked: 0 };
+    const prev = buckets.get(key) || { mqlYes: 0, mqlNo: 0, mqlQualified: 0, booked: 0, qbooked: 0, audit: 0 };
     if (c.mql === 'yes') prev.mqlYes++; else if (c.mql === 'no') prev.mqlNo++;
     if (c.qualified) prev.mqlQualified++;
     if (c.booked) prev.booked++;
     if (c.booked && c.qualified) prev.qbooked++;
+    if (c.audit) prev.audit++;
     buckets.set(key, prev);
   });
   return buckets;
@@ -1293,7 +1330,7 @@ function safeDiv(a, b) { return b > 0 ? a / b : 0; }
 // ===================== AGGREGATION =====================
 
 function sumRows(rows) {
-  const s = { spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, registrations: 0, schedulesMeta: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0, videoViews: 0, sessions: 0, bounced: 0 };
+  const s = { spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, registrations: 0, schedulesMeta: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0, audit: 0, videoViews: 0, sessions: 0, bounced: 0 };
   rows.forEach(r => { Object.keys(s).forEach(k => s[k] += (r[k] || 0)); });
   return s;
 }
@@ -1317,7 +1354,8 @@ function aggregateByAd(rows) {
       cpsch: safeDiv(s.spend, s.mqlYes),
       cpqmql: safeDiv(s.spend, s.mqlQualified),
       cpbooking: safeDiv(s.spend, s.booked),
-      cpqbooking: safeDiv(s.spend, s.qbooked)
+      cpqbooking: safeDiv(s.spend, s.qbooked),
+      cpaudit: safeDiv(s.spend, s.audit)
     });
   });
 }
@@ -1346,9 +1384,11 @@ function renderBigNumbers(rows) {
   document.getElementById('bn-cpbooking').textContent = fmtMoney(safeDiv(s.spend, ic.booked));
   document.getElementById('bn-qbooked').textContent = fmtInt(ic.qbooked);
   document.getElementById('bn-cpqbooking').textContent = fmtMoney(safeDiv(s.spend, ic.qbooked));
+  document.getElementById('bn-audit').textContent = fmtInt(ic.audit);
+  document.getElementById('bn-cpaudit').textContent = fmtMoney(safeDiv(s.spend, ic.audit));
 
   const compareEl = document.getElementById('compare-range-label');
-  const deltaKeys = ['spend', 'clicks', 'cpm', 'ctr', 'cp1kreach', 'frequency', 'funnelcvr', 'real-mql', 'spam', 'cpsch', 'qualified-mql', 'cpqmql', 'booked', 'cpbooking', 'qbooked', 'cpqbooking'];
+  const deltaKeys = ['spend', 'clicks', 'cpm', 'ctr', 'cp1kreach', 'frequency', 'funnelcvr', 'real-mql', 'spam', 'cpsch', 'qualified-mql', 'cpqmql', 'booked', 'cpbooking', 'qbooked', 'cpqbooking', 'audit', 'cpaudit'];
 
   if (!filterState.compare || !filterState.dateFrom || !filterState.dateTo) {
     deltaKeys.forEach(k => {
@@ -1396,6 +1436,8 @@ function renderBigNumbers(rows) {
   const prevCpbooking = safeDiv(p.spend, pIc.booked);
   const curCpqbooking = safeDiv(s.spend, ic.qbooked);
   const prevCpqbooking = safeDiv(p.spend, pIc.qbooked);
+  const curCpaudit = safeDiv(s.spend, ic.audit);
+  const prevCpaudit = safeDiv(p.spend, pIc.audit);
 
   setDelta('spend', s.spend, p.spend, 'neutral');
   setDelta('clicks', s.clicks, p.clicks, 'up-good');
@@ -1413,6 +1455,8 @@ function renderBigNumbers(rows) {
   setDelta('cpbooking', curCpbooking, prevCpbooking, 'up-bad');
   setDelta('qbooked', ic.qbooked, pIc.qbooked, 'up-good');
   setDelta('cpqbooking', curCpqbooking, prevCpqbooking, 'up-bad');
+  setDelta('audit', ic.audit, pIc.audit, 'up-good');
+  setDelta('cpaudit', curCpaudit, prevCpaudit, 'up-bad');
 
   if (compareEl) compareEl.textContent = 'Comparing to ' + prevFrom + ' – ' + prevTo;
 }
@@ -1468,7 +1512,7 @@ function renderSpendChart(rows) {
   const buckets = new Map();
   rows.forEach(r => {
     const key = granularity === 'weekly' ? isoWeekStart(r.date) : r.date;
-    const prev = buckets.get(key) || { spend: 0, impressions: 0, clicks: 0, reach: 0, bounced: 0, sessions: 0, mqlYes: 0, mqlNo: 0, mqlQualified: 0, booked: 0, qbooked: 0 };
+    const prev = buckets.get(key) || { spend: 0, impressions: 0, clicks: 0, reach: 0, bounced: 0, sessions: 0, mqlYes: 0, mqlNo: 0, mqlQualified: 0, booked: 0, qbooked: 0, audit: 0 };
     prev.spend += r.spend || 0; prev.impressions += r.impressions || 0; prev.clicks += r.clicks || 0;
     prev.reach += r.reach || 0; prev.bounced += r.bounced || 0; prev.sessions += r.sessions || 0;
     buckets.set(key, prev);
@@ -1477,7 +1521,7 @@ function renderSpendChart(rows) {
   // bucketIClosedContacts) -- sumar directo de `rows` cuenta doble a los multi-touch.
   bucketIClosedContacts(getFilteredIClosedContacts()).forEach((icBucket, key) => {
     const prev = buckets.get(key) || { spend: 0, impressions: 0, clicks: 0, reach: 0, bounced: 0, sessions: 0 };
-    prev.mqlYes = icBucket.mqlYes; prev.mqlNo = icBucket.mqlNo; prev.mqlQualified = icBucket.mqlQualified; prev.booked = icBucket.booked; prev.qbooked = icBucket.qbooked;
+    prev.mqlYes = icBucket.mqlYes; prev.mqlNo = icBucket.mqlNo; prev.mqlQualified = icBucket.mqlQualified; prev.booked = icBucket.booked; prev.qbooked = icBucket.qbooked; prev.audit = icBucket.audit;
     buckets.set(key, prev);
   });
   const labels = Array.from(buckets.keys()).sort();
@@ -1577,7 +1621,7 @@ const METRIC_DIRECTION = {
   reach: 'up-good', frequency: 'up-good', lpViews: 'up-good', registrations: 'up-good',
   mqlYes: 'up-good', mqlNo: 'up-bad', mqlBlank: 'neutral', cpsch: 'up-bad',
   mqlQualified: 'up-good', cpqmql: 'up-bad', booked: 'up-good', cpbooking: 'up-bad',
-  qbooked: 'up-good', cpqbooking: 'up-bad',
+  qbooked: 'up-good', cpqbooking: 'up-bad', audit: 'up-good', cpaudit: 'up-bad',
   hookRate: 'up-good', bounceRate: 'up-bad', cp1kreach: 'up-bad', funnelcvr: 'up-good'
 };
 
@@ -1610,7 +1654,8 @@ const CREATIVE_NUM_COLUMNS = [
   { key: 'mqlYes', fmt: 'int' }, { key: 'mqlNo', fmt: 'int' }, { key: 'mqlBlank', fmt: 'int' },
   { key: 'cpsch', fmt: 'money' }, { key: 'mqlQualified', fmt: 'int' }, { key: 'cpqmql', fmt: 'money' },
   { key: 'booked', fmt: 'int' }, { key: 'cpbooking', fmt: 'money' },
-  { key: 'qbooked', fmt: 'int' }, { key: 'cpqbooking', fmt: 'money' }, { key: 'hookRate', fmt: 'pct' },
+  { key: 'qbooked', fmt: 'int' }, { key: 'cpqbooking', fmt: 'money' },
+  { key: 'audit', fmt: 'int' }, { key: 'cpaudit', fmt: 'money' }, { key: 'hookRate', fmt: 'pct' },
   { key: 'bounceRate', fmt: 'pct' }
 ];
 let highlightedAd = null; // ad seleccionado desde un click en el scatter -- resaltado en esta tabla
@@ -1807,7 +1852,11 @@ function renderFunnel(rows) {
     { label: 'Real MQL', value: ic.mqlYes, color: 'var(--funnel-5)', qual: ic.realMqlQual, qualLabel: 'Qualified Lead' },
     // Booked ⊆ Real MQL, así que el funnel sigue siendo monotónico. Verde (--series-2, el
     // color "positivo" de marca) para que el paso final de conversión se distinga del gradiente violeta.
-    { label: 'Booked', value: ic.booked, color: 'var(--series-2)', qual: ic.qbooked, qualLabel: 'Qualified Booking' }
+    { label: 'Booked', value: ic.booked, color: 'var(--series-2)', qual: ic.qbooked, qualLabel: 'Qualified Booking' },
+    // Audit = etapa final (Audit = YES, manual). No tiene variante qualified, así que sin resaltado.
+    // Es independiente del booking (no se exige booked), así que en teoría podría no ser ⊆ Booked;
+    // los números al costado son la verdad literal si eso llega a pasar.
+    { label: 'Audit', value: ic.audit, color: 'var(--series-1)' }
   ];
   // El largo de barra usa escala LOGARÍTMICA, no lineal: el rango va de ~157k impresiones a
   // ~12 bookings, así que en lineal MQL/Booked quedaban slivers invisibles. Con log cada etapa
@@ -1857,7 +1906,9 @@ const PERF_COLUMNS = [
   { key: 'booked', fmt: 'int' },
   { key: 'cpbooking', fmt: 'money' },
   { key: 'qbooked', fmt: 'int' },
-  { key: 'cpqbooking', fmt: 'money' }
+  { key: 'cpqbooking', fmt: 'money' },
+  { key: 'audit', fmt: 'int' },
+  { key: 'cpaudit', fmt: 'money' }
 ];
 
 // Desglose de los Big Numbers por Account/Campaign/Ad Set. Las métricas de Meta (spend,
@@ -1870,7 +1921,7 @@ function computePerfRows(rows, contacts) {
   const groups = new Map();
   const ensure = (v) => {
     const key = v || '(unattributed)';
-    if (!groups.has(key)) groups.set(key, { name: key, spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0 });
+    if (!groups.has(key)) groups.set(key, { name: key, spend: 0, impressions: 0, clicks: 0, reach: 0, lpViews: 0, mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0, audit: 0 });
     return groups.get(key);
   };
 
@@ -1895,6 +1946,7 @@ function computePerfRows(rows, contacts) {
       if (c.qualified) g.mqlQualified++;
       if (c.booked) g.booked++;
       if (c.booked && c.qualified) g.qbooked++;
+      if (c.audit) g.audit++;
     });
   });
 
@@ -1909,7 +1961,8 @@ function computePerfRows(rows, contacts) {
       cpsch: safeDiv(g.spend, g.mqlYes),
       cpqmql: safeDiv(g.spend, g.mqlQualified),
       cpbooking: safeDiv(g.spend, g.booked),
-      cpqbooking: safeDiv(g.spend, g.qbooked)
+      cpqbooking: safeDiv(g.spend, g.qbooked),
+      cpaudit: safeDiv(g.spend, g.audit)
     }));
 }
 
