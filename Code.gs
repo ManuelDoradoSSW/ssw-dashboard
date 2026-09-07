@@ -297,6 +297,19 @@ var ICLOSED_AUTO_SHEET = 'iClosed_Auto';
 // La API nunca toca Audit: se lee de la hoja y se reescribe en su fila. El dashboard ignora J/K/L.
 var ICLOSED_AUTO_HEADERS = ['Date', 'Account', 'Campaign', 'Ad Set', 'Ad', 'Real MQL', 'Lead Score', 'Scheduling status', 'Event', 'Contact ID', 'Email', 'Audit'];
 var ICLOSED_AUTO_WINDOW_DAYS = 14; // ventana (por joinedTime) que se re-sincroniza cada corrida; es MERGE, no reemplazo
+
+// Tab donde se pega el export manual de iClosed ("Global Data -> contacts"), tal cual, sin recortar
+// columnas. Sirve SOLO para rellenar UTMs que la API no devuelve.
+//
+// Por qué existe: la API pública de iClosed NO expone los UTM guardados a nivel contacto. Verificado
+// (2026-09-07) dumpeando los 3 endpoints para contactos que en el export SÍ tienen UTM Campaign/
+// Medium/Content: /v1/contacts (item de lista), /v1/contacts/detail (todas sus keys, incluido
+// CustomFieldAssociation) y /v1/eventCalls -- ninguno los trae. El script de tracking de iClosed
+// guarda la atribución de first-touch en el contacto y el export la muestra, pero la API no.
+// Las 2 fuentes que sí funcionan (eventCalls[].utm y el query string del referrerUrl) cubren a los
+// contactos con call agendada o que entraron por una landing tagueada; se pierde exactamente el
+// caso "sin call agendada + landing sin params" (pastCallsCount=0 y referrerUrl pelado).
+var ICLOSED_UTM_PATCH_SHEET = 'iClosed_UTM_patch';
 // Fecha de corte: la API es la fuente DESDE acá en adelante. Debe coincidir con ICLOSED_CUTOVER del
 // dashboard (index.html). El sync nunca procesa contactos creados antes -> el histórico queda 100%
 // en la tab histórica (manual). Poné el día después de tu último pegado manual.
@@ -365,6 +378,38 @@ function backfillIClosedAuto(sinceStr) {
   Logger.log('backfillIClosedAuto listo desde ' + since);
 }
 
+// Indexa el export pegado en ICLOSED_UTM_PATCH_SHEET por email -> {campaign, medium, content}.
+// Se lee por NOMBRE de header ('Contact', 'UTM Campaign', 'UTM Medium', 'UTM Content'), así que se
+// puede pegar el export completo (32 columnas) sin tocar nada y sin importar el orden.
+// Si la tab no existe, devuelve {} y el sync sigue funcionando igual que antes.
+function readIClosedUtmPatch() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ICLOSED_UTM_PATCH_SHEET);
+  if (!sheet) return {};
+  var lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return {};
+  var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  var hdr = values[0].map(function (h) { return String(h || '').trim().toLowerCase(); });
+  var iEmail = hdr.indexOf('contact');
+  var iCamp = hdr.indexOf('utm campaign');
+  var iMed = hdr.indexOf('utm medium');
+  var iCont = hdr.indexOf('utm content');
+  if (iEmail < 0) { Logger.log('iClosed_UTM_patch: falta la columna "Contact" (email) -- se ignora la tab'); return {}; }
+
+  var map = {}, n = 0;
+  for (var r = 1; r < values.length; r++) {
+    var email = String(values[r][iEmail] || '').trim().toLowerCase();
+    if (!email) continue;
+    var campaign = iCamp >= 0 ? String(values[r][iCamp] || '').trim() : '';
+    var medium = iMed >= 0 ? String(values[r][iMed] || '').trim() : '';
+    var content = iCont >= 0 ? String(values[r][iCont] || '').trim() : '';
+    if (!campaign && !medium && !content) continue; // sin UTMs no aporta nada
+    map[email] = { campaign: campaign, medium: medium, content: content };
+    n++;
+  }
+  Logger.log('iClosed_UTM_patch: ' + n + ' emails con UTM disponibles para backfill');
+  return map;
+}
+
 function runIClosedAuto(since, until) {
   var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
   if (!apiKey) throw new Error('Falta ICLOSED_API_KEY en Script Properties');
@@ -377,6 +422,8 @@ function runIClosedAuto(since, until) {
   readSheetAsObjects(ICLOSED_AUTO_SHEET, ICLOSED_AUTO_HEADERS).forEach(function (row) {
     byId[String(row['Contact ID'])] = row;
   });
+
+  var utmPatch = readIClosedUtmPatch();
 
   contacts.forEach(function (c) {
     try {
@@ -391,6 +438,13 @@ function runIClosedAuto(since, until) {
       var eventName = contactEventNames(c.ContactEvents);
       var status = c.status || detail.status || '';
       var email = detail.email || pickEmail(c);
+      // 3ra fuente de UTM: el export manual pegado en iClosed_UTM_patch, matcheado por email. Solo
+      // se usa si las 2 fuentes de API quedaron vacías -- la API nunca expone estos UTM (ver el
+      // comentario de ICLOSED_UTM_PATCH_SHEET), así que sin esto el contacto queda sin atribuir.
+      if (!utm.campaign && !utm.medium && !utm.content) {
+        var patched = utmPatch[String(email || '').trim().toLowerCase()];
+        if (patched) utm = patched;
+      }
       var prev = byId[id];
 
       if (!prev) {
@@ -564,44 +618,6 @@ function fetchIClosedJson(url, apiKey, label) {
     if (i < 3) Utilities.sleep(2000 * Math.pow(2, i)); // 2s, 4s, 8s
   }
   throw new Error('iClosed ' + label + ' fallo tras 4 intentos -- ' + lastInfo);
-}
-
-// DIAGNÓSTICO (temporal): para los contactos que salieron con los 3 UTM vacíos, muestra el código
-// HTTP real y el payload crudo de /v1/eventCalls + el referrerUrl del detail. Distingue entre
-// "fallo transitorio 429/5xx que se estaba tragando" y "la API realmente no tiene UTM para ese
-// contacto". Incluye 2 contactos que SÍ trajeron UTM como control para comparar la forma del payload.
-function debugIClosedUtmFailures() {
-  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
-  var vacios = ['4592645', '4628282', '4650330', '4662661', '4547267', '4582444', '4544761', '4596733'];
-  var control = ['4537449', '4540274'];
-
-  [['VACIO', vacios], ['CONTROL (trajo UTM)', control]].forEach(function (grupo) {
-    Logger.log('=========== ' + grupo[0] + ' ===========');
-    grupo[1].forEach(function (id) {
-      var ecUrl = ICLOSED_BASE_URL + '/v1/eventCalls?contactId=' + id + '&eventType=ALL&limit=20&page=0';
-      var ec = UrlFetchApp.fetch(ecUrl, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-      var ecCode = ec.getResponseCode();
-      var ecBody = ec.getContentText();
-      var nCalls = '?', utmDump = '?';
-      try {
-        var calls = (JSON.parse(ecBody).data || {}).eventCalls || [];
-        nCalls = calls.length;
-        utmDump = JSON.stringify(calls.map(function (c) { return c.utm || null; }));
-      } catch (e) { utmDump = 'parse err'; }
-
-      var dUrl = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + id;
-      var d = UrlFetchApp.fetch(dUrl, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-      var dCode = d.getResponseCode();
-      var referrer = '?';
-      try { referrer = ((JSON.parse(d.getContentText()).data) || {}).referrerUrl || '(vacio)'; } catch (e) { referrer = 'parse err'; }
-
-      Logger.log(id + ' | eventCalls HTTP=' + ecCode + ' calls=' + nCalls + ' utm=' + utmDump);
-      Logger.log(id + ' | detail HTTP=' + dCode + ' referrerUrl=' + String(referrer).substring(0, 220));
-      if (ecCode !== 200) Logger.log(id + ' | eventCalls body: ' + ecBody.substring(0, 300));
-      Utilities.sleep(400);
-    });
-  });
-  Logger.log('FIN debugIClosedUtmFailures');
 }
 
 function utmFromEventCalls(contactId, apiKey) {

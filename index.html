@@ -1033,8 +1033,13 @@ function splitMultiValue(s) {
 function buildNameCrosscheck(names) {
   const raw = new Set(names);
   const encoded = new Map();
-  names.forEach(n => encoded.set(n.replace(/ /g, '+'), n));
-  return { raw, encoded };
+  const lower = new Map();
+  names.forEach(n => {
+    encoded.set(n.replace(/ /g, '+'), n);
+    lower.set(n.toLowerCase(), n);
+    lower.set(n.replace(/ /g, '+').toLowerCase(), n);
+  });
+  return { raw, encoded, lower };
 }
 
 function resolveByCrosscheck(rawValue, crosscheck) {
@@ -1046,6 +1051,11 @@ function resolveByCrosscheck(rawValue, crosscheck) {
   const decoded = decodePlusEncoded(rawValue);
   if (crosscheck.raw.has(decoded)) return decoded;
   if (crosscheck.encoded.has(decoded)) return crosscheck.encoded.get(decoded);
+  // Último recurso, case-insensitive: iClosed a veces guarda los UTM en minúscula mientras Meta
+  // tiene el nombre en mayúscula (ej. "ssw_fb_leads_sched_cbo_us_old+account_2025-06"). Sin esto
+  // ese contacto cae en "(unattributed)" aunque tenga UTM. Devuelve el nombre real de Meta.
+  const lowerHit = crosscheck.lower.get(rawValue.toLowerCase()) || crosscheck.lower.get(decoded.toLowerCase());
+  if (lowerHit) return lowerHit;
   return decoded;
 }
 
@@ -1054,10 +1064,12 @@ function buildAdCrosscheck(metaRows) {
   // los + legítimos, ej "ADV+") para poder revertir el encoding de iClosed sin ambigüedad
   const map = new Map();
   metaRows.forEach(r => {
-    if (!map.has(r.date)) map.set(r.date, { raw: new Set(), encoded: new Map() });
+    if (!map.has(r.date)) map.set(r.date, { raw: new Set(), encoded: new Map(), lower: new Map() });
     const bucket = map.get(r.date);
     bucket.raw.add(r.ad);
     bucket.encoded.set(r.ad.replace(/ /g, '+'), r.ad);
+    bucket.lower.set(r.ad.toLowerCase(), r.ad);
+    bucket.lower.set(r.ad.replace(/ /g, '+').toLowerCase(), r.ad);
   });
   return map;
 }
@@ -1067,7 +1079,12 @@ function resolveAdName(rawAd, date, adsByDate) {
   if (!bucket) return decodePlusEncoded(rawAd);
   if (bucket.raw.has(rawAd)) return rawAd;
   if (bucket.encoded.has(rawAd)) return bucket.encoded.get(rawAd);
-  return decodePlusEncoded(rawAd);
+  const decoded = decodePlusEncoded(rawAd);
+  // case-insensitive por el mismo motivo que resolveByCrosscheck: iClosed a veces guarda el
+  // utm_content en minúscula y sin esto el ad no matchea con el nombre real de Meta.
+  const lowerHit = bucket.lower.get(rawAd.toLowerCase()) || bucket.lower.get(decoded.toLowerCase());
+  if (lowerHit) return lowerHit;
+  return decoded;
 }
 
 function mergeSources(metaRows, phRows, icRows) {
