@@ -410,6 +410,54 @@ function readIClosedUtmPatch() {
   return map;
 }
 
+// Rellena los UTM vacíos de un mapa de filas (por Contact ID) con el export pegado en
+// iClosed_UTM_patch, matcheando por email. Fill-if-empty: NUNCA pisa un UTM que ya tenga valor,
+// así que es seguro correrlo cuantas veces quieras y es idempotente.
+//
+// Se aplica a TODAS las filas de la hoja, no solo a los contactos que cayeron en la ventana de 14
+// días del sync -- si estuviera atado a la ventana, un hueco de más de 14 días quedaría vacío para
+// siempre y la frecuencia con que pegás el export pasaría a importar. Así, un solo pegado repara
+// todo el histórico de iClosed_Auto de una.
+function applyUtmPatchTo(byId) {
+  var patch = readIClosedUtmPatch();
+  if (!Object.keys(patch).length) return 0;
+  var n = 0;
+  Object.keys(byId).forEach(function (id) {
+    var row = byId[id];
+    if (row['Campaign'] || row['Ad Set'] || row['Ad']) return; // ya atribuida, no se toca
+    var p = patch[String(row['Email'] || '').trim().toLowerCase()];
+    if (!p) return;
+    row['Campaign'] = p.campaign;
+    row['Ad Set'] = p.medium;
+    row['Ad'] = p.content;
+    n++;
+  });
+  Logger.log('iClosed_UTM_patch: ' + n + ' filas rellenadas por email');
+  return n;
+}
+
+// Corré esto solo: pegás el export en iClosed_UTM_patch y rellena los huecos de iClosed_Auto en
+// segundos, SIN pegarle a la API de iClosed. El sync diario también lo hace al final de cada
+// corrida, así que esto es para cuando querés el resultado ya.
+function applyIClosedUtmPatch() {
+  var byId = {};
+  readSheetAsObjects(ICLOSED_AUTO_SHEET, ICLOSED_AUTO_HEADERS).forEach(function (row) {
+    byId[String(row['Contact ID'])] = row;
+  });
+  var total = Object.keys(byId).length;
+  if (!total) { Logger.log('iClosed_Auto vacía, nada que hacer.'); return; }
+
+  var n = applyUtmPatchTo(byId);
+  if (!n) { Logger.log('Nada para rellenar (o falta la tab ' + ICLOSED_UTM_PATCH_SHEET + ').'); return; }
+
+  var rows = Object.keys(byId).map(function (id) {
+    var r = byId[id];
+    return ICLOSED_AUTO_HEADERS.map(function (h) { return r[h] != null ? r[h] : ''; });
+  });
+  writeWholeSheet(ICLOSED_AUTO_SHEET, ICLOSED_AUTO_HEADERS, rows);
+  Logger.log('Listo: ' + n + ' de ' + total + ' filas de iClosed_Auto rellenadas.');
+}
+
 function runIClosedAuto(since, until) {
   var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
   if (!apiKey) throw new Error('Falta ICLOSED_API_KEY en Script Properties');
@@ -422,8 +470,6 @@ function runIClosedAuto(since, until) {
   readSheetAsObjects(ICLOSED_AUTO_SHEET, ICLOSED_AUTO_HEADERS).forEach(function (row) {
     byId[String(row['Contact ID'])] = row;
   });
-
-  var utmPatch = readIClosedUtmPatch();
 
   contacts.forEach(function (c) {
     try {
@@ -438,13 +484,6 @@ function runIClosedAuto(since, until) {
       var eventName = contactEventNames(c.ContactEvents);
       var status = c.status || detail.status || '';
       var email = detail.email || pickEmail(c);
-      // 3ra fuente de UTM: el export manual pegado en iClosed_UTM_patch, matcheado por email. Solo
-      // se usa si las 2 fuentes de API quedaron vacías -- la API nunca expone estos UTM (ver el
-      // comentario de ICLOSED_UTM_PATCH_SHEET), así que sin esto el contacto queda sin atribuir.
-      if (!utm.campaign && !utm.medium && !utm.content) {
-        var patched = utmPatch[String(email || '').trim().toLowerCase()];
-        if (patched) utm = patched;
-      }
       var prev = byId[id];
 
       if (!prev) {
@@ -474,6 +513,8 @@ function runIClosedAuto(since, until) {
     }
     Utilities.sleep(150); // throttle: 2 llamadas por contacto seguidas martillaban la API (429 -> UTM vacío)
   });
+
+  applyUtmPatchTo(byId);
 
   var rows = Object.keys(byId).map(function (id) {
     var r = byId[id];
