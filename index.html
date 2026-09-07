@@ -928,13 +928,19 @@ async function loadAll() {
     thumbnailUrl: cellStr(r.c[14])
   }));
 
+  const adsByDate = buildAdCrosscheck(metaRows);
+
+  // PostHog guarda el ad en el utm_content, donde el "+" literal del nombre (ej. "SSW_ADV+_...")
+  // llega convertido en espacio y a veces todo en minúscula. Antes se leía CRUDO y el join por
+  // date+ad contra Meta fallaba en silencio: 895 de 1584 sesiones (56%) se descartaban y 17 ads
+  // con spend figuraban con 0 sesiones. Pasa por resolveAdName igual que las filas de iClosed.
   const phRows = dataRows(phTable).map(r => ({
-    date: cellDate(r.c[0]), ad: cellStr(r.c[1]), sessions: cellNum(r.c[2]), bounced: cellNum(r.c[3])
+    date: cellDate(r.c[0]),
+    ad: resolveAdName(cellStr(r.c[1]), cellDate(r.c[0]), adsByDate),
+    sessions: cellNum(r.c[2]), bounced: cellNum(r.c[3])
   }));
   const phDatesWithSessions = phRows.filter(r => r.sessions > 0).map(r => r.date);
   postHogStartDate = phDatesWithSessions.length ? phDatesWithSessions.sort()[0] : null;
-
-  const adsByDate = buildAdCrosscheck(metaRows);
   // crosschecks para revertir el encoding "+" de los utm de iClosed contra los nombres reales de
   // Meta (Campaign = utm_campaign, Ad Set = utm_medium). Se resuelve cada touch por su propio utm,
   // NO por ad name -- el mismo creative corre en varios ad sets/campañas y matchear por ad daba
@@ -1026,6 +1032,20 @@ function decodePlusEncoded(s) {
   try { return decodeURIComponent(s.replace(/\+/g, ' ')); } catch (e) { return s.replace(/\+/g, ' '); }
 }
 
+// Clave canónica para matchear un mismo nombre de ad/campaña entre Meta, iClosed y PostHog, que lo
+// escriben de formas distintas e irreconciliables sin normalizar. Ejemplo real del mismo ad:
+//   Meta:            "SSW_ADV+_ACQ.COM_TryMyTeam_2026-07-31 - Copy 2"
+//   PostHog:         "SSW_ADV _ACQ.COM_TryMyTeam_2026-07-31 - Copy 2"   (el + literal -> espacio)
+//   PostHog (otra):  "ssw_adv _acq.com_trymyteam_2026-07-31 - copy 2"   (+ minúscula)
+//   iClosed export:  "SSW_ADV+_ACQ.COM_TryMyTeam_2026-07-31+-+Copy+2"   (espacios -> +)
+// En un query string "+" SIGNIFICA espacio, así que el + legítimo del nombre se pierde en el viaje y
+// no hay forma de distinguirlo de un espacio real. Por eso la clave colapsa + y espacio al mismo
+// caracter y baja todo a minúscula: es ambiguo a propósito. El nombre REAL de Meta se devuelve
+// aparte (los crosschecks guardan norm -> nombre de Meta), así que la UI nunca muestra la clave.
+function normalizeName(s) {
+  return String(decodePlusEncoded(String(s || '')) || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 function splitMultiValue(s) {
   return String(s || '').split(',').map(x => x.trim()).filter(Boolean);
 }
@@ -1033,13 +1053,12 @@ function splitMultiValue(s) {
 function buildNameCrosscheck(names) {
   const raw = new Set(names);
   const encoded = new Map();
-  const lower = new Map();
+  const norm = new Map();
   names.forEach(n => {
     encoded.set(n.replace(/ /g, '+'), n);
-    lower.set(n.toLowerCase(), n);
-    lower.set(n.replace(/ /g, '+').toLowerCase(), n);
+    if (!norm.has(normalizeName(n))) norm.set(normalizeName(n), n);
   });
-  return { raw, encoded, lower };
+  return { raw, encoded, norm };
 }
 
 function resolveByCrosscheck(rawValue, crosscheck) {
@@ -1051,11 +1070,11 @@ function resolveByCrosscheck(rawValue, crosscheck) {
   const decoded = decodePlusEncoded(rawValue);
   if (crosscheck.raw.has(decoded)) return decoded;
   if (crosscheck.encoded.has(decoded)) return crosscheck.encoded.get(decoded);
-  // Último recurso, case-insensitive: iClosed a veces guarda los UTM en minúscula mientras Meta
-  // tiene el nombre en mayúscula (ej. "ssw_fb_leads_sched_cbo_us_old+account_2025-06"). Sin esto
-  // ese contacto cae en "(unattributed)" aunque tenga UTM. Devuelve el nombre real de Meta.
-  const lowerHit = crosscheck.lower.get(rawValue.toLowerCase()) || crosscheck.lower.get(decoded.toLowerCase());
-  if (lowerHit) return lowerHit;
+  // Último recurso: la clave canónica (ver normalizeName). Cubre minúsculas -- iClosed a veces
+  // guarda los UTM así (ej. "ssw_fb_leads_sched_cbo_us_old+account_2025-06") -- y el + literal
+  // convertido en espacio. Sin esto el contacto cae en "(unattributed)" aunque tenga UTM.
+  const normHit = crosscheck.norm.get(normalizeName(rawValue));
+  if (normHit) return normHit;
   return decoded;
 }
 
@@ -1064,42 +1083,70 @@ function buildAdCrosscheck(metaRows) {
   // los + legítimos, ej "ADV+") para poder revertir el encoding de iClosed sin ambigüedad
   const map = new Map();
   metaRows.forEach(r => {
-    if (!map.has(r.date)) map.set(r.date, { raw: new Set(), encoded: new Map(), lower: new Map() });
+    if (!map.has(r.date)) map.set(r.date, { raw: new Set(), encoded: new Map(), norm: new Map() });
     const bucket = map.get(r.date);
     bucket.raw.add(r.ad);
     bucket.encoded.set(r.ad.replace(/ /g, '+'), r.ad);
-    bucket.lower.set(r.ad.toLowerCase(), r.ad);
-    bucket.lower.set(r.ad.replace(/ /g, '+').toLowerCase(), r.ad);
+    bucket.norm.set(normalizeName(r.ad), r.ad);
   });
+  // índice global (sin fecha) como último recurso: PostHog atribuye la sesión al día en que
+  // ocurrió, que no siempre es un día en que ese ad tuvo entrega en Meta_Raw -- exigir mismo día
+  // ahí descartaba sesiones de ads que sí existen.
+  const anyDate = new Map();
+  metaRows.forEach(r => { if (!anyDate.has(normalizeName(r.ad))) anyDate.set(normalizeName(r.ad), r.ad); });
+  map.set('__any__', { raw: new Set(), encoded: new Map(), norm: anyDate });
   return map;
 }
 
 function resolveAdName(rawAd, date, adsByDate) {
   const bucket = adsByDate.get(date);
-  if (!bucket) return decodePlusEncoded(rawAd);
-  if (bucket.raw.has(rawAd)) return rawAd;
-  if (bucket.encoded.has(rawAd)) return bucket.encoded.get(rawAd);
-  const decoded = decodePlusEncoded(rawAd);
-  // case-insensitive por el mismo motivo que resolveByCrosscheck: iClosed a veces guarda el
-  // utm_content en minúscula y sin esto el ad no matchea con el nombre real de Meta.
-  const lowerHit = bucket.lower.get(rawAd.toLowerCase()) || bucket.lower.get(decoded.toLowerCase());
-  if (lowerHit) return lowerHit;
-  return decoded;
+  if (bucket) {
+    if (bucket.raw.has(rawAd)) return rawAd;
+    if (bucket.encoded.has(rawAd)) return bucket.encoded.get(rawAd);
+    const hit = bucket.norm.get(normalizeName(rawAd));
+    if (hit) return hit;
+  }
+  // fallback global: mismo nombre normalizado en cualquier fecha (ver comentario en buildAdCrosscheck)
+  const any = adsByDate.get('__any__');
+  const anyHit = any && any.norm.get(normalizeName(rawAd));
+  if (anyHit) return anyHit;
+  return decodePlusEncoded(rawAd);
 }
 
 function mergeSources(metaRows, phRows, icRows) {
+  const SEP = '\u0001'; // separador que no puede aparecer en un nombre de ad/ad set
+  const ZERO_IC = { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0, audit: 0 };
+
+  // PostHog solo conoce el ad (viene del utm_content), NO el ad set -> se agrupa por date+ad.
   const phMap = new Map();
   phRows.forEach(r => {
-    const key = r.date + '' + r.ad;
+    const key = r.date + SEP + r.ad;
     const prev = phMap.get(key) || { sessions: 0, bounced: 0 };
     prev.sessions += r.sessions; prev.bounced += r.bounced;
     phMap.set(key, prev);
   });
 
+  // Cuántas filas de Meta comparten cada (date, ad) y con cuántas impresiones. El mismo creative
+  // corre en varios ad sets, así que hay hasta 3 filas por clave; antes se le pegaba el TOTAL de
+  // sesiones a CADA una, inflando sessions/bounce hasta 3x (74 de 295 claves duplicadas). Como
+  // PostHog no sabe el ad set, se reparte proporcional a las impresiones: el total por ad queda
+  // exacto y el corte por campaign/ad set es una estimación (la mejor posible con esta data).
+  const phShare = new Map();
+  metaRows.forEach(r => {
+    const key = r.date + SEP + r.ad;
+    const prev = phShare.get(key) || { n: 0, impressions: 0 };
+    prev.n++; prev.impressions += r.impressions || 0;
+    phShare.set(key, prev);
+  });
+
+  // iClosed SÍ sabe el ad set (sale del utm_medium del propio contacto), así que su clave lo
+  // incluye. Sin el ad set en la clave, un MQL del ad set X se sumaba TAMBIÉN a los ad sets Y y Z
+  // que corren el mismo creative: duplicaba el conteo y mal-atribuía. Un contacto cuyo ad set no
+  // resuelve contra Meta cae en el bucket de no-matcheados de abajo (no se pierde).
   const icMap = new Map();
   icRows.forEach(r => {
-    const key = r.date + '' + r.ad;
-    const prev = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0, audit: 0, account: r.account, campaign: r.campaign, adset: r.adset, date: r.date, ad: r.ad };
+    const key = r.date + SEP + r.ad + SEP + r.adset;
+    const prev = icMap.get(key) || Object.assign({}, ZERO_IC, { account: r.account, campaign: r.campaign, adset: r.adset, date: r.date, ad: r.ad });
     if (r.mql === 'yes') prev.mqlYes++; else if (r.mql === 'no') prev.mqlNo++; else prev.mqlBlank++;
     if (r.qualified) prev.mqlQualified++;
     if (r.booked) prev.booked++;
@@ -1112,12 +1159,15 @@ function mergeSources(metaRows, phRows, icRows) {
   const rows = [];
 
   metaRows.forEach(r => {
-    const key = r.date + '' + r.ad;
-    seen.add(key);
-    const ph = phMap.get(key) || { sessions: 0, bounced: 0 };
-    const ic = icMap.get(key) || { mqlYes: 0, mqlNo: 0, mqlBlank: 0, mqlQualified: 0, booked: 0, qbooked: 0, audit: 0 };
+    const phKey = r.date + SEP + r.ad;
+    const icKey = r.date + SEP + r.ad + SEP + r.adset;
+    seen.add(icKey);
+    const ph = phMap.get(phKey) || { sessions: 0, bounced: 0 };
+    const share = phShare.get(phKey) || { n: 1, impressions: 0 };
+    const frac = share.impressions > 0 ? (r.impressions || 0) / share.impressions : 1 / share.n;
+    const ic = icMap.get(icKey) || ZERO_IC;
     rows.push(Object.assign({}, r, {
-      sessions: ph.sessions, bounced: ph.bounced,
+      sessions: ph.sessions * frac, bounced: ph.bounced * frac,
       mqlYes: ic.mqlYes, mqlNo: ic.mqlNo, mqlBlank: ic.mqlBlank, mqlQualified: ic.mqlQualified, booked: ic.booked, qbooked: ic.qbooked, audit: ic.audit
     }));
   });
