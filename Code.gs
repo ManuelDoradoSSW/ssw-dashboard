@@ -418,6 +418,7 @@ function runIClosedAuto(since, until) {
     } catch (e) {
       Logger.log('iClosed_Auto contacto ' + c.id + ' FALLO, sigo: ' + e.message);
     }
+    Utilities.sleep(150); // throttle: 2 llamadas por contacto seguidas martillaban la API (429 -> UTM vacío)
   });
 
   var rows = Object.keys(byId).map(function (id) {
@@ -437,9 +438,7 @@ function fetchIClosedContactsList(since, until, apiKey) {
     var url = ICLOSED_BASE_URL + '/v1/contacts'
       + '?timeFrom=' + encodeURIComponent(since + 'T00:00:00Z') + '&timeTo=' + encodeURIComponent(until + 'T23:59:59Z')
       + '&limit=' + limit + '&page=' + page + '&orderColumn=joinedTime&orderBy=asc';
-    var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-    var json = JSON.parse(resp.getContentText());
-    if (json.error) throw new Error('iClosed contacts: ' + JSON.stringify(json.error));
+    var json = fetchIClosedJson(url, apiKey, 'contacts page ' + page);
     var list = (json.data && json.data.contacts) || [];
     all = all.concat(list);
     var total = (json.data && json.data.count) || 0;
@@ -468,8 +467,7 @@ function iclosedDate(joinedTime) {
 
 function fetchIClosedDetail(contactId, apiKey) {
   var url = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + contactId;
-  var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-  var json = JSON.parse(resp.getContentText());
+  var json = fetchIClosedJson(url, apiKey, 'contacts/detail ' + contactId);
   var d = (json && json.data) || {};
   var assoc = d.CustomFieldAssociation || [];
   return {
@@ -541,10 +539,74 @@ function decodeUtmValue(v) {
 // columnas de UTM. Devuelve el primer call que tenga utm_campaign/medium/content, o null si ninguno.
 // OJO: acá los valores vienen en formato "+"-por-espacio (igual que el export manual, NO percent-
 // encoded como el referrerUrl), así que se guardan tal cual -- el crosscheck del dashboard los matchea.
+// Todas las llamadas a iClosed pasan por acá: chequea el código HTTP y reintenta con backoff.
+// Antes cada fetch usaba UrlFetchApp crudo con muteHttpExceptions y SIN mirar el response code, así
+// que un 429/5xx transitorio se tragaba en silencio -> utmFromEventCalls devolvía null -> el
+// contacto se escribía con los 3 UTM vacíos y no quedaba rastro del fallo. Ahora un fallo
+// persistente tira error (el try/catch por contacto lo loguea y sigue) en vez de escribir data mala.
+function fetchIClosedJson(url, apiKey, label) {
+  var lastInfo = '';
+  for (var i = 0; i < 4; i++) {
+    var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
+    var code = resp.getResponseCode();
+    var body = resp.getContentText();
+    if (code === 200) {
+      try {
+        var json = JSON.parse(body);
+        if (!json.error) return json;
+        lastInfo = 'error ' + JSON.stringify(json.error);
+      } catch (e) {
+        lastInfo = 'JSON invalido: ' + body.substring(0, 200);
+      }
+    } else {
+      lastInfo = 'HTTP ' + code + ': ' + body.substring(0, 200);
+    }
+    if (i < 3) Utilities.sleep(2000 * Math.pow(2, i)); // 2s, 4s, 8s
+  }
+  throw new Error('iClosed ' + label + ' fallo tras 4 intentos -- ' + lastInfo);
+}
+
+// DIAGNÓSTICO (temporal): para los contactos que salieron con los 3 UTM vacíos, muestra el código
+// HTTP real y el payload crudo de /v1/eventCalls + el referrerUrl del detail. Distingue entre
+// "fallo transitorio 429/5xx que se estaba tragando" y "la API realmente no tiene UTM para ese
+// contacto". Incluye 2 contactos que SÍ trajeron UTM como control para comparar la forma del payload.
+function debugIClosedUtmFailures() {
+  var apiKey = PropertiesService.getScriptProperties().getProperty('ICLOSED_API_KEY');
+  var vacios = ['4592645', '4628282', '4650330', '4662661', '4547267', '4582444', '4544761', '4596733'];
+  var control = ['4537449', '4540274'];
+
+  [['VACIO', vacios], ['CONTROL (trajo UTM)', control]].forEach(function (grupo) {
+    Logger.log('=========== ' + grupo[0] + ' ===========');
+    grupo[1].forEach(function (id) {
+      var ecUrl = ICLOSED_BASE_URL + '/v1/eventCalls?contactId=' + id + '&eventType=ALL&limit=20&page=0';
+      var ec = UrlFetchApp.fetch(ecUrl, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
+      var ecCode = ec.getResponseCode();
+      var ecBody = ec.getContentText();
+      var nCalls = '?', utmDump = '?';
+      try {
+        var calls = (JSON.parse(ecBody).data || {}).eventCalls || [];
+        nCalls = calls.length;
+        utmDump = JSON.stringify(calls.map(function (c) { return c.utm || null; }));
+      } catch (e) { utmDump = 'parse err'; }
+
+      var dUrl = ICLOSED_BASE_URL + '/v1/contacts/detail?contactId=' + id;
+      var d = UrlFetchApp.fetch(dUrl, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
+      var dCode = d.getResponseCode();
+      var referrer = '?';
+      try { referrer = ((JSON.parse(d.getContentText()).data) || {}).referrerUrl || '(vacio)'; } catch (e) { referrer = 'parse err'; }
+
+      Logger.log(id + ' | eventCalls HTTP=' + ecCode + ' calls=' + nCalls + ' utm=' + utmDump);
+      Logger.log(id + ' | detail HTTP=' + dCode + ' referrerUrl=' + String(referrer).substring(0, 220));
+      if (ecCode !== 200) Logger.log(id + ' | eventCalls body: ' + ecBody.substring(0, 300));
+      Utilities.sleep(400);
+    });
+  });
+  Logger.log('FIN debugIClosedUtmFailures');
+}
+
 function utmFromEventCalls(contactId, apiKey) {
   var url = ICLOSED_BASE_URL + '/v1/eventCalls?contactId=' + contactId + '&eventType=ALL&limit=20&page=0';
-  var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + apiKey }, muteHttpExceptions: true });
-  var calls = (JSON.parse(resp.getContentText()).data || {}).eventCalls || [];
+  var calls = (fetchIClosedJson(url, apiKey, 'eventCalls ' + contactId).data || {}).eventCalls || [];
   for (var i = 0; i < calls.length; i++) {
     var m = {};
     (calls[i].utm || []).forEach(function (u) { if (u && u.utmKey && !(u.utmKey in m)) m[u.utmKey] = u.utmValue; });
