@@ -461,6 +461,26 @@
           <div class="bignum-value" id="bn-ctr">–</div>
           <div class="bignum-delta" id="bn-ctr-delta"></div>
         </div>
+        <div class="bignum-tile" data-tooltip="Spend / Clicks">
+          <div class="bignum-label">CPC</div>
+          <div class="bignum-value" id="bn-cpc">–</div>
+          <div class="bignum-delta" id="bn-cpc-delta"></div>
+        </div>
+        <div class="bignum-tile" data-tooltip="LP Views (Meta)">
+          <div class="bignum-label">LP Views</div>
+          <div class="bignum-value" id="bn-lpViews">–</div>
+          <div class="bignum-delta" id="bn-lpViews-delta"></div>
+        </div>
+        <div class="bignum-tile" data-tooltip="LP Views / Clicks">
+          <div class="bignum-label">Click → LP View</div>
+          <div class="bignum-value" id="bn-clicktolpv">–</div>
+          <div class="bignum-delta" id="bn-clicktolpv-delta"></div>
+        </div>
+        <div class="bignum-tile" data-tooltip="Spend / LP Views">
+          <div class="bignum-label">Cost per LP View</div>
+          <div class="bignum-value" id="bn-cplpv">–</div>
+          <div class="bignum-delta" id="bn-cplpv-delta"></div>
+        </div>
         <div class="bignum-tile" data-tooltip="Spend / Reach × 1000">
           <div class="bignum-label">Cost per 1000 Meta Accounts (estimated)</div>
           <div class="bignum-value" id="bn-cp1kreach">–</div>
@@ -573,6 +593,10 @@
             <th data-key="clicks">Clicks</th>
             <th data-key="cpm">CPM</th>
             <th data-key="ctr">CTR</th>
+            <th data-key="cpc">CPC</th>
+            <th data-key="lpViews">LP Views</th>
+            <th data-key="clicktolpv">Click → LP View</th>
+            <th data-key="cplpv">Cost / LP View</th>
             <th data-key="cp1kreach">Cost / 1000 Meta Accounts (est.)</th>
             <th data-key="frequency">Frequency (est.)</th>
             <th data-key="funnelcvr">Funnel Conversion Rate</th>
@@ -611,10 +635,13 @@
             <th data-key="impressions">Impressions</th>
             <th data-key="clicks">Clicks</th>
             <th data-key="ctr">CTR</th>
+            <th data-key="cpc">CPC</th>
             <th data-key="cpm">CPM</th>
             <th data-key="reach">Reach</th>
             <th data-key="frequency">Frequency</th>
             <th data-key="lpViews">LP Views</th>
+            <th data-key="clicktolpv">Click → LP View</th>
+            <th data-key="cplpv">Cost / LP View</th>
             <th data-key="registrations">Registrations</th>
             <th data-key="mqlYes">Real MQL (Yes)</th>
             <th data-key="mqlNo">Real MQL (No)</th>
@@ -710,6 +737,10 @@ const ICLOSED_CUTOVER = '2026-08-25';
 const METRIC_OPTIONS = [
   { key: 'spend', label: 'Spend', fmt: 'money' },
   { key: 'ctr', label: 'CTR', fmt: 'pct' },
+  { key: 'cpc', label: 'CPC', fmt: 'money2' },
+  { key: 'lpViews', label: 'LP Views', fmt: 'int' },
+  { key: 'clicktolpv', label: 'Click → LP View', fmt: 'pct' },
+  { key: 'cplpv', label: 'Cost per LP View', fmt: 'money2' },
   { key: 'cpm', label: 'CPM', fmt: 'money' },
   { key: 'reach', label: 'Reach', fmt: 'int' },
   { key: 'frequency', label: 'Frequency', fmt: 'dec' },
@@ -732,6 +763,10 @@ const CHART_METRICS = {
   spend:      { label: 'Spend', fmt: 'money', compute: s => s.spend },
   cpm:        { label: 'CPM', fmt: 'money', compute: s => safeDiv(s.spend, s.impressions) * 1000 },
   ctr:        { label: 'CTR', fmt: 'pct', compute: s => safeDiv(s.clicks, s.impressions) },
+  cpc:        { label: 'CPC', fmt: 'money2', compute: s => safeDiv(s.spend, s.clicks) },
+  lpViews:    { label: 'LP Views', fmt: 'int', compute: s => s.lpViews },
+  clicktolpv: { label: 'Click → LP View', fmt: 'pct', compute: s => safeDiv(s.lpViews, s.clicks) },
+  cplpv:      { label: 'Cost per LP View', fmt: 'money2', compute: s => safeDiv(s.spend, s.lpViews) },
   reach:      { label: 'Reach', fmt: 'int', compute: s => s.reach },
   frequency:  { label: 'Frequency', fmt: 'dec', compute: s => safeDiv(s.impressions, s.reach) },
   bounceRate: { label: 'Bounce Rate', fmt: 'pct', compute: s => safeDiv(s.bounced, s.sessions) },
@@ -747,7 +782,7 @@ const CHART_METRICS = {
   audit:      { label: 'Audits', fmt: 'int', compute: s => s.audit },
   cpaudit:    { label: 'Cost per Audit', fmt: 'money', compute: s => safeDiv(s.spend, s.audit) }
 };
-const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'reach', 'frequency', 'bounceRate', 'mqlYes', 'cpsch', 'mqlNo', 'mqlQualified', 'cpqmql', 'booked', 'cpbooking', 'qbooked', 'cpqbooking', 'audit', 'cpaudit'];
+const CHART_METRIC_KEYS = ['spend', 'cpm', 'ctr', 'cpc', 'lpViews', 'clicktolpv', 'cplpv', 'reach', 'frequency', 'bounceRate', 'mqlYes', 'cpsch', 'mqlNo', 'mqlQualified', 'cpqmql', 'booked', 'cpbooking', 'qbooked', 'cpqbooking', 'audit', 'cpaudit'];
 
 let UNIFIED = []; // flat rows at Date x Account x Campaign x AdSet x Ad grain
 let charts = {};
@@ -1409,10 +1444,13 @@ function computePresetRange(preset, min, max) {
 // ===================== FORMATTING =====================
 
 function fmtMoney(v) { return '$' + (v || 0).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
+// Costos chicos (CPC, Cost per LP View): a dólar entero se pierde precisión que sí importa
+// ($8.43 vs $8.99 es una diferencia real). Los costos grandes (Cost per Booking) siguen con fmtMoney.
+function fmtMoney2(v) { return '$' + (v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function fmtInt(v) { return Math.round(v || 0).toLocaleString('en-US'); }
 function fmtDec(v) { return (v || 0).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
 function fmtPct(v) { return ((v || 0) * 100).toLocaleString('en-US', { maximumFractionDigits: 1 }) + '%'; }
-function fmtByType(v, fmt) { return fmt === 'money' ? fmtMoney(v) : fmt === 'pct' ? fmtPct(v) : fmt === 'int' ? fmtInt(v) : fmtDec(v); }
+function fmtByType(v, fmt) { return fmt === 'money' ? fmtMoney(v) : fmt === 'money2' ? fmtMoney2(v) : fmt === 'pct' ? fmtPct(v) : fmt === 'int' ? fmtInt(v) : fmtDec(v); }
 function fmtDateLong(dateStr) {
   return new Date(dateStr + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }
@@ -1439,6 +1477,9 @@ function aggregateByAd(rows) {
     const s = sumRows(g.rows);
     return Object.assign({ ad: g.ad, account: g.account, thumbnailUrl: g.thumbnailUrl }, s, {
       ctr: safeDiv(s.clicks, s.impressions),
+      cpc: safeDiv(s.spend, s.clicks),
+      clicktolpv: safeDiv(s.lpViews, s.clicks),
+      cplpv: safeDiv(s.spend, s.lpViews),
       cpm: safeDiv(s.spend, s.impressions) * 1000,
       frequency: safeDiv(s.impressions, s.reach),
       hookRate: safeDiv(s.videoViews, s.impressions),
@@ -1464,6 +1505,10 @@ function renderBigNumbers(rows) {
   document.getElementById('bn-clicks').textContent = fmtInt(s.clicks);
   document.getElementById('bn-cpm').textContent = fmtMoney(safeDiv(s.spend, s.impressions) * 1000);
   document.getElementById('bn-ctr').textContent = fmtPct(safeDiv(s.clicks, s.impressions));
+  document.getElementById('bn-cpc').textContent = fmtMoney2(safeDiv(s.spend, s.clicks));
+  document.getElementById('bn-lpViews').textContent = fmtInt(s.lpViews);
+  document.getElementById('bn-clicktolpv').textContent = fmtPct(safeDiv(s.lpViews, s.clicks));
+  document.getElementById('bn-cplpv').textContent = fmtMoney2(safeDiv(s.spend, s.lpViews));
   document.getElementById('bn-cp1kreach').textContent = fmtMoney(safeDiv(s.spend, s.reach) * 1000);
   document.getElementById('bn-frequency').textContent = fmtDec(safeDiv(s.impressions, s.reach));
   document.getElementById('bn-funnelcvr').textContent = fmtPct(safeDiv(ic.mqlYes, s.lpViews));
@@ -1480,7 +1525,7 @@ function renderBigNumbers(rows) {
   document.getElementById('bn-cpaudit').textContent = fmtMoney(safeDiv(s.spend, ic.audit));
 
   const compareEl = document.getElementById('compare-range-label');
-  const deltaKeys = ['spend', 'clicks', 'cpm', 'ctr', 'cp1kreach', 'frequency', 'funnelcvr', 'real-mql', 'spam', 'cpsch', 'qualified-mql', 'cpqmql', 'booked', 'cpbooking', 'qbooked', 'cpqbooking', 'audit', 'cpaudit'];
+  const deltaKeys = ['spend', 'clicks', 'cpm', 'ctr', 'cpc', 'lpViews', 'clicktolpv', 'cplpv', 'cp1kreach', 'frequency', 'funnelcvr', 'real-mql', 'spam', 'cpsch', 'qualified-mql', 'cpqmql', 'booked', 'cpbooking', 'qbooked', 'cpqbooking', 'audit', 'cpaudit'];
 
   if (!filterState.compare || !filterState.dateFrom || !filterState.dateTo) {
     deltaKeys.forEach(k => {
@@ -1514,6 +1559,12 @@ function renderBigNumbers(rows) {
   const prevCpm = safeDiv(p.spend, p.impressions) * 1000;
   const curCtr = safeDiv(s.clicks, s.impressions);
   const prevCtr = safeDiv(p.clicks, p.impressions);
+  const curCpc = safeDiv(s.spend, s.clicks);
+  const prevCpc = safeDiv(p.spend, p.clicks);
+  const curClickToLpv = safeDiv(s.lpViews, s.clicks);
+  const prevClickToLpv = safeDiv(p.lpViews, p.clicks);
+  const curCplpv = safeDiv(s.spend, s.lpViews);
+  const prevCplpv = safeDiv(p.spend, p.lpViews);
   const curCp1kReach = safeDiv(s.spend, s.reach) * 1000;
   const prevCp1kReach = safeDiv(p.spend, p.reach) * 1000;
   const curFreq = safeDiv(s.impressions, s.reach);
@@ -1535,6 +1586,10 @@ function renderBigNumbers(rows) {
   setDelta('clicks', s.clicks, p.clicks, 'up-good');
   setDelta('cpm', curCpm, prevCpm, 'up-bad');
   setDelta('ctr', curCtr, prevCtr, 'up-good');
+  setDelta('cpc', curCpc, prevCpc, 'up-bad');
+  setDelta('lpViews', s.lpViews, p.lpViews, 'up-good');
+  setDelta('clicktolpv', curClickToLpv, prevClickToLpv, 'up-good');
+  setDelta('cplpv', curCplpv, prevCplpv, 'up-bad');
   setDelta('cp1kreach', curCp1kReach, prevCp1kReach, 'up-bad');
   setDelta('frequency', curFreq, prevFreq, 'up-good');
   setDelta('funnelcvr', curFunnelCvr, prevFunnelCvr, 'up-good');
@@ -1710,6 +1765,7 @@ function getCompareRange() {
 // dirección de "bueno" por métrica: up-good (subir = verde), up-bad (subir = rojo), neutral.
 const METRIC_DIRECTION = {
   spend: 'neutral', impressions: 'up-good', clicks: 'up-good', ctr: 'up-good', cpm: 'up-bad',
+  cpc: 'up-bad', cplpv: 'up-bad', clicktolpv: 'up-good',
   reach: 'up-good', frequency: 'up-good', lpViews: 'up-good', registrations: 'up-good',
   mqlYes: 'up-good', mqlNo: 'up-bad', mqlBlank: 'neutral', cpsch: 'up-bad',
   mqlQualified: 'up-good', cpqmql: 'up-bad', booked: 'up-good', cpbooking: 'up-bad',
@@ -1741,8 +1797,9 @@ let tableSortKey = 'spend', tableSortDir = -1;
 // columnas numéricas en el MISMO orden que el <thead> de #creative-table (después de Creative/Ad/Account)
 const CREATIVE_NUM_COLUMNS = [
   { key: 'spend', fmt: 'money' }, { key: 'impressions', fmt: 'int' }, { key: 'clicks', fmt: 'int' },
-  { key: 'ctr', fmt: 'pct' }, { key: 'cpm', fmt: 'money' }, { key: 'reach', fmt: 'int' },
-  { key: 'frequency', fmt: 'dec' }, { key: 'lpViews', fmt: 'int' }, { key: 'registrations', fmt: 'int' },
+  { key: 'ctr', fmt: 'pct' }, { key: 'cpc', fmt: 'money2' }, { key: 'cpm', fmt: 'money' }, { key: 'reach', fmt: 'int' },
+  { key: 'frequency', fmt: 'dec' }, { key: 'lpViews', fmt: 'int' },
+  { key: 'clicktolpv', fmt: 'pct' }, { key: 'cplpv', fmt: 'money2' }, { key: 'registrations', fmt: 'int' },
   { key: 'mqlYes', fmt: 'int' }, { key: 'mqlNo', fmt: 'int' }, { key: 'mqlBlank', fmt: 'int' },
   { key: 'cpsch', fmt: 'money' }, { key: 'mqlQualified', fmt: 'int' }, { key: 'cpqmql', fmt: 'money' },
   { key: 'booked', fmt: 'int' }, { key: 'cpbooking', fmt: 'money' },
@@ -1987,6 +2044,10 @@ const PERF_COLUMNS = [
   { key: 'clicks', fmt: 'int' },
   { key: 'cpm', fmt: 'money' },
   { key: 'ctr', fmt: 'pct' },
+  { key: 'cpc', fmt: 'money2' },
+  { key: 'lpViews', fmt: 'int' },
+  { key: 'clicktolpv', fmt: 'pct' },
+  { key: 'cplpv', fmt: 'money2' },
   { key: 'cp1kreach', fmt: 'money' },
   { key: 'frequency', fmt: 'dec' },
   { key: 'funnelcvr', fmt: 'pct' },
@@ -2047,6 +2108,9 @@ function computePerfRows(rows, contacts) {
     .map(g => Object.assign(g, {
       cpm: safeDiv(g.spend, g.impressions) * 1000,
       ctr: safeDiv(g.clicks, g.impressions),
+      cpc: safeDiv(g.spend, g.clicks),
+      clicktolpv: safeDiv(g.lpViews, g.clicks),
+      cplpv: safeDiv(g.spend, g.lpViews),
       cp1kreach: safeDiv(g.spend, g.reach) * 1000,
       frequency: safeDiv(g.impressions, g.reach),
       funnelcvr: safeDiv(g.mqlYes, g.lpViews),
