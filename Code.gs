@@ -14,7 +14,7 @@ var POSTHOG_SHEET = 'PostHog_Raw';
 // ningún sync. Lo del 25/8 en adelante lo maneja syncIClosedAuto (escribe a iClosed_Auto).
 
 var META_HEADERS = ['Date', 'Account', 'Campaign', 'Ad Set', 'Ad', 'Spend', 'Impressions',
-  'Clicks', 'Reach', 'Frequency', 'LP Views', 'Registrations', 'Schedules (Meta)', 'Video Views', 'Thumbnail URL'];
+  'Link Clicks', 'Reach', 'Frequency', 'LP Views', 'Registrations', 'Schedules (Meta)', 'Video Views', 'Thumbnail URL'];
 var POSTHOG_HEADERS = ['Date', 'Ad', 'Sessions', 'Bounced Sessions'];
 var CREATIVES_SHEET = 'Creatives';
 var CREATIVES_HEADERS = ['Ad', 'Thumbnail URL'];
@@ -150,7 +150,9 @@ function fetchMetaAccount(account, since, until, token) {
 function fetchMetaInsightsRaw(account, since, until, token) {
   var rows = [];
   var timeRange = encodeURIComponent(JSON.stringify({ since: since, until: until }));
-  var fields = 'ad_id,ad_name,adset_name,campaign_name,account_name,spend,impressions,clicks,reach,frequency,actions';
+  // inline_link_clicks = "Link Clicks" de Ads Manager (clicks a links al destino del anunciante).
+  // NO se usa `clicks`, que es "Clicks (All)" e incluye likes, comentarios, clicks al perfil, etc.
+  var fields = 'ad_id,ad_name,adset_name,campaign_name,account_name,spend,impressions,inline_link_clicks,reach,frequency,actions';
   var url = 'https://graph.facebook.com/' + GRAPH_API_VERSION + '/' + account.id + '/insights'
     + '?level=ad&time_increment=1&limit=500'
     + '&time_range=' + timeRange
@@ -174,7 +176,8 @@ function buildMetaRow(r, account, thumbnails) {
     r.ad_name || '',
     Number(r.spend || 0),
     Number(r.impressions || 0),
-    Number(r.clicks || 0),
+    // Link Clicks. Fallback al action 'link_click' por si la cuenta no devuelve el campo inline.
+    Number(r.inline_link_clicks || 0) || findAction(r.actions, ['link_click']),
     Number(r.reach || 0),
     Number(r.frequency || 0),
     findAction(r.actions, ['omni_landing_page_view', 'landing_page_view']),
@@ -785,6 +788,7 @@ function upsertRows(sheetName, headers, newRows, since, until, accountFilter) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) throw new Error('No existe la tab ' + sheetName);
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]); // idempotente; hace que un rename de header llegue a la hoja
 
   var lastRow = sheet.getLastRow();
   var keep = [];

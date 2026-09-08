@@ -447,7 +447,7 @@
           <div class="bignum-delta" id="bn-spend-delta"></div>
         </div>
         <div class="bignum-tile">
-          <div class="bignum-label">Clicks</div>
+          <div class="bignum-label">Link Clicks</div>
           <div class="bignum-value" id="bn-clicks">–</div>
           <div class="bignum-delta" id="bn-clicks-delta"></div>
         </div>
@@ -456,12 +456,12 @@
           <div class="bignum-value" id="bn-cpm">–</div>
           <div class="bignum-delta" id="bn-cpm-delta"></div>
         </div>
-        <div class="bignum-tile" data-tooltip="Clicks / Impressions">
+        <div class="bignum-tile" data-tooltip="Link Clicks / Impressions">
           <div class="bignum-label">CTR</div>
           <div class="bignum-value" id="bn-ctr">–</div>
           <div class="bignum-delta" id="bn-ctr-delta"></div>
         </div>
-        <div class="bignum-tile" data-tooltip="Spend / Clicks">
+        <div class="bignum-tile" data-tooltip="Spend / Link Clicks">
           <div class="bignum-label">CPC</div>
           <div class="bignum-value" id="bn-cpc">–</div>
           <div class="bignum-delta" id="bn-cpc-delta"></div>
@@ -471,7 +471,7 @@
           <div class="bignum-value" id="bn-lpViews">–</div>
           <div class="bignum-delta" id="bn-lpViews-delta"></div>
         </div>
-        <div class="bignum-tile" data-tooltip="LP Views / Clicks">
+        <div class="bignum-tile" data-tooltip="LP Views / Link Clicks">
           <div class="bignum-label">Click → LP View</div>
           <div class="bignum-value" id="bn-clicktolpv">–</div>
           <div class="bignum-delta" id="bn-clicktolpv-delta"></div>
@@ -590,7 +590,7 @@
           <tr>
             <th data-key="name" id="perf-th-name">Account</th>
             <th data-key="spend">Spend</th>
-            <th data-key="clicks">Clicks</th>
+            <th data-key="clicks">Link Clicks</th>
             <th data-key="cpm">CPM</th>
             <th data-key="ctr">CTR</th>
             <th data-key="cpc">CPC</th>
@@ -633,7 +633,7 @@
             <th data-key="account">Account</th>
             <th data-key="spend">Spend</th>
             <th data-key="impressions">Impressions</th>
-            <th data-key="clicks">Clicks</th>
+            <th data-key="clicks">Link Clicks</th>
             <th data-key="ctr">CTR</th>
             <th data-key="cpc">CPC</th>
             <th data-key="cpm">CPM</th>
@@ -700,7 +700,7 @@
               <input type="number" class="scatter-filter-val" placeholder="value">
             </div>
             <div class="scatter-filter-row" data-field="clicks">
-              <label>Clicks</label>
+              <label>Link Clicks</label>
               <select class="scatter-filter-op">
                 <option value="">No filter</option>
                 <option value="gt">Greater than</option>
@@ -1993,7 +1993,7 @@ function renderFunnel(rows) {
   const ic = sumIClosedContacts(getFilteredIClosedContacts());
   const stages = [
     { label: 'Impressions', value: s.impressions, color: 'var(--funnel-1)' },
-    { label: 'Clicks', value: s.clicks, color: 'var(--funnel-2)' },
+    { label: 'Link Clicks', value: s.clicks, color: 'var(--funnel-2)' },
     { label: 'LP Views', value: s.lpViews, color: 'var(--funnel-3)' },
     { label: 'Registrations (all MQLs)', value: ic.mqlYes + ic.mqlNo + ic.mqlBlank, color: 'var(--funnel-4)' },
     // qual = subconjunto de ESTA barra que además es qualified (Lead Score A/B); se resalta dentro
