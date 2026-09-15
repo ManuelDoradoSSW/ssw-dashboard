@@ -96,7 +96,7 @@
     color: var(--text-primary);
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     font-size: 14px;
-    padding: 24px;
+    padding: 0; /* el padding vive en .main-col para que el sidebar llegue al borde */
   }
   h1 { font-size: 20px; margin: 0 0 4px; color: var(--accent); }
   h2 { font-size: 15px; margin: 0 0 16px; color: var(--text-primary); }
@@ -136,6 +136,50 @@
     border-radius: 10px;
     padding: 20px;
     margin-bottom: 24px;
+  }
+
+  /* ---- layout con sidebar ---- */
+  .layout { display: flex; align-items: flex-start; gap: 0; }
+  .main-col { flex: 1; min-width: 0; padding: 24px; } /* min-width:0 es lo que deja que las tablas anchas scrolleen adentro en vez de estirar el layout */
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    flex: 0 0 186px;
+    align-self: stretch;
+    min-height: 100vh;
+    padding: 18px 12px;
+    background: var(--surface-2);
+    border-right: 1px solid var(--border);
+  }
+  .sidebar-brand {
+    font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
+    color: var(--text-muted); padding: 0 10px 14px; text-transform: uppercase;
+  }
+  .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav-section {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--text-muted); opacity: 0.75; padding: 14px 10px 5px;
+  }
+  .nav-item {
+    display: block; width: 100%; text-align: left;
+    padding: 8px 10px; border: 0; border-radius: 7px;
+    background: transparent; color: var(--text);
+    font-size: 13px; font-family: inherit; cursor: pointer;
+  }
+  .nav-item:hover { background: var(--highlight-bg); }
+  .nav-item.is-active { background: var(--highlight-bg); color: var(--series-1); font-weight: 600; }
+
+  /* En pantallas angostas el sidebar pasa a ser una barra horizontal arriba */
+  @media (max-width: 760px) {
+    .layout { flex-direction: column; }
+    .sidebar {
+      flex: none; width: 100%; min-height: 0; position: static;
+      border-right: 0; border-bottom: 1px solid var(--border); padding: 10px 12px;
+    }
+    .sidebar-brand { display: none; }
+    .sidebar-nav { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .nav-section { padding: 0 4px; }
   }
 
   #filters-card {
@@ -345,7 +389,10 @@
   /* porción resaltada (qualified) dentro de la barra: pegada al borde DERECHO de la barra */
   .funnel-bar-qual { position: absolute; right: 0; top: 0; height: 100%; border-radius: 0 4px 4px 0; background: var(--qual-highlight); }
   /* aclaración en el espacio libre del track, a la derecha de la barra */
-  .funnel-qual-note { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 700; color: var(--text-secondary); display: flex; align-items: center; gap: 5px; white-space: nowrap; pointer-events: none; }
+  /* Chip de fondo: la nota se apoya sobre la barra cuando ésta es ancha (pasa en el funnel de
+     Leads, donde el rango es chico y las barras ocupan casi todo el track) y sin fondo el texto
+     quedaba ilegible encima del color. */
+  .funnel-qual-note { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 700; color: var(--text-secondary); display: flex; align-items: center; gap: 5px; white-space: nowrap; pointer-events: none; background: var(--surface-1); padding: 2px 7px; border-radius: 10px; border: 1px solid var(--border); }
   .funnel-qual-swatch { width: 9px; height: 9px; border-radius: 2px; background: var(--qual-highlight); display: inline-block; flex-shrink: 0; }
   .funnel-label { font-size: 13px; color: var(--text-secondary); font-weight: 700; }
   .funnel-value { font-size: 13px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
@@ -371,6 +418,18 @@
 </div>
 
 <div id="dashboard-content" style="display:none;">
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">SSW</div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">Performance</div>
+      <button type="button" class="nav-item" data-view="performance">Meta Ads</button>
+      <div class="nav-section">Leads</div>
+      <button type="button" class="nav-item" data-view="leads">Cohorts &amp; Contacts</button>
+    </nav>
+  </aside>
+  <main class="main-col">
 
 <div class="brand-header">
   <img class="brand-logo" src="data:image/jpeg;base64,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" alt="SSW logo">
@@ -463,6 +522,7 @@
 <div id="app-status" class="loading">Loading data from Meta_Raw, PostHog_Raw and iClosed…</div>
 
 <div id="app-body" style="display:none;">
+<section id="view-performance">
 
   <div class="card">
     <h2>Big Numbers</h2>
@@ -748,7 +808,137 @@
     <p class="caveat" style="margin:0 0 16px;">Bar length uses a log scale so every stage stays visible despite the huge range (impressions to bookings). The counts and step conversion % on the right are the exact figures.</p>
     <div class="funnel" id="funnel-body"></div>
   </div>
+</section>
 
+<section id="view-leads" hidden>
+
+  <div class="card" id="leads-filters-card">
+    <div class="filters">
+      <div class="filter-group">
+        <label>Date range</label>
+        <select id="lf-date-preset">
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="last7">Last 7 days</option>
+          <option value="last14">Last 14 days</option>
+          <option value="last30">Last 30 days</option>
+          <option value="thisMonth">This Month</option>
+          <option value="lastMonth">Last Month</option>
+          <option value="ytd">Year to date</option>
+          <option value="all">All time</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <div class="filter-group" id="lf-custom-from-group" style="display:none;">
+        <label>From</label>
+        <input type="date" id="lf-date-from">
+      </div>
+      <div class="filter-group" id="lf-custom-to-group" style="display:none;">
+        <label>To</label>
+        <input type="date" id="lf-date-to">
+      </div>
+      <div class="filter-group">
+        <label>Account</label>
+        <div class="msel" id="lmsel-account"></div>
+      </div>
+      <div class="filter-group">
+        <label>Campaign</label>
+        <div class="msel" id="lmsel-campaign"></div>
+      </div>
+      <div class="filter-group">
+        <label>Ad Set</label>
+        <div class="msel" id="lmsel-adset"></div>
+      </div>
+      <div class="filter-group">
+        <label>Stage</label>
+        <select id="lf-stage">
+          <option value="all">All leads</option>
+          <option value="mql">Real MQL only</option>
+          <option value="qualified">Qualified MQL only</option>
+          <option value="booked">Booked only</option>
+          <option value="audit">Audited only</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Search email</label>
+        <input type="search" id="lf-search" placeholder="name@domain.com">
+      </div>
+      <div class="filter-group">
+        <button id="lf-reset">Reset filters</button>
+      </div>
+    </div>
+    <div class="cohort-note">
+      <span class="cohort-note-icon" aria-hidden="true">ⓘ</span>
+      <span>Every lead is counted in the cohort of the week or month it was <strong>created</strong>, and its later stages count in that same cohort — so a lead created in week 1 that books in week 3 still shows under week 1. That is what makes the conversion rates comparable across cohorts.</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Lead funnel</h2>
+    <p class="caveat" style="margin:0 0 16px;">Each stage as a share of all leads, and the step-to-step conversion. Follows the filters above.</p>
+    <div class="funnel" id="leads-funnel"></div>
+  </div>
+
+  <div class="card">
+    <h2 class="chart-title-row" style="margin-bottom:6px;">
+      <span>Cohorts by</span>
+      <select id="lf-grain" class="inline-metric-select">
+        <option value="weekly">week</option>
+        <option value="monthly">month</option>
+      </select>
+      <span>of lead creation</span>
+    </h2>
+    <p class="caveat" style="margin:0 0 16px;">Rows are cohorts by creation date; each stage shows the count and its % of that cohort's leads. The last cohort is usually still maturing — leads can still book or be audited — so read its rates as a floor, not a final number.</p>
+    <div class="table-wrap">
+      <table id="cohort-table">
+        <thead>
+          <tr>
+            <th data-key="cohort">Cohort</th>
+            <th data-key="leads">Leads</th>
+            <th data-key="mql">Real MQL</th>
+            <th data-key="mqlPct">% MQL</th>
+            <th data-key="qualified">Qualified MQL</th>
+            <th data-key="qualifiedPct">% Qualified</th>
+            <th data-key="booked">Booked</th>
+            <th data-key="bookedPct">% Booked</th>
+            <th data-key="qbooked">Qualified Bookings</th>
+            <th data-key="audit">Audits</th>
+            <th data-key="auditPct">% Audited</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-bottom:6px;">Leads</h2>
+    <p class="caveat" style="margin:0 0 16px;">One row per contact (deduplicated). Attribution comes from the contact's own UTMs; a lead that touched more than one ad set shows them comma-separated. Click a header to sort.</p>
+    <div class="table-wrap">
+      <table id="leads-table">
+        <thead>
+          <tr>
+            <th data-key="date">Created</th>
+            <th data-key="email">Email</th>
+            <th data-key="leadScore">Lead Score</th>
+            <th data-key="mql">Real MQL</th>
+            <th data-key="stage">Furthest stage</th>
+            <th data-key="account">Account</th>
+            <th data-key="campaign">Campaign</th>
+            <th data-key="adset">Ad Set</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="caveat" id="leads-table-note" style="margin:12px 0 0;"></p>
+  </div>
+
+</section>
+
+</div>
+
+  </main>
 </div>
 
 </div>
@@ -1020,16 +1210,22 @@ async function loadAll() {
   // fijo. Cada fila se envuelve con su flag audit ya calculado antes de mezclar los dos sets.
   const auditIdxManual = headerIndex(icTable, 'Audit');
   const auditIdxAuto = headerIndex(icAutoTable, 'Audit');
+  // El email está en índices distintos en cada tab igual que Audit (la histórica no tiene Contact
+  // ID), así que también se resuelve por header. Lo usa la vista de Leads.
+  const emailIdxManual = headerIndex(icTable, 'Email');
+  const emailIdxAuto = headerIndex(icAutoTable, 'Email');
   const isAuditYes = (r, idx) => idx >= 0 && cellStr(r.c[idx]).trim().toUpperCase() === 'YES';
+  const emailOf = (r, idx) => (idx >= 0 ? cellStr(r.c[idx]).trim() : '');
   const icManual = (icTable ? dataRows(icTable) : []).filter(r => cellDate(r.c[0]) < ICLOSED_CUTOVER)
-    .map(r => ({ r, audit: isAuditYes(r, auditIdxManual) }));
+    .map(r => ({ r, audit: isAuditYes(r, auditIdxManual), email: emailOf(r, emailIdxManual) }));
   const icAuto = autoContactRows(icAutoTable).filter(r => cellDate(r.c[0]) >= ICLOSED_CUTOVER)
-    .map(r => ({ r, audit: isAuditYes(r, auditIdxAuto) }));
+    .map(r => ({ r, audit: isAuditYes(r, auditIdxAuto), email: emailOf(r, emailIdxAuto) }));
   const icSourceRows = icManual.concat(icAuto);
 
   const icRows = icSourceRows.flatMap((src, icRowId) => {
     const r = src.r;
     const audit = src.audit;
+    const email = src.email;
     const date = cellDate(r.c[0]);
     const icAccount = cellStr(r.c[1]);
     // campaign/adset/ad vienen como listas separadas por coma en contactos multi-touch, alineadas
@@ -1043,7 +1239,8 @@ async function loadAll() {
     // Lead Score (columna G) -- opciones reales son "A: High Quality" / "B: Quality" / "C: Low Quality".
     // Lista explícita de qué cuenta como qualified (A o B), pedido puntual del usuario en vez del
     // filtro negativo anterior ("no vacío y no contiene LOW") -- más robusto a futuras opciones nuevas.
-    const leadScoreRaw = cellStr(r.c[6]).trim().toUpperCase();
+    const leadScoreText = cellStr(r.c[6]).trim(); // sin uppercase, para mostrar en la tabla de Leads
+    const leadScoreRaw = leadScoreText.toUpperCase();
     const qualified = leadScoreRaw.startsWith('A:') || leadScoreRaw.startsWith('B:');
     // Booking (columnas H/I) -- cuenta como Booked si: Real MQL = YES, Scheduling status =
     // DISCOVERY_CALL_BOOKED, y el Event tiene "Call A" PERO NO "Call B" (si agendó ambas o
@@ -1066,7 +1263,7 @@ async function loadAll() {
       const campaign = resolveByCrosscheck(campaignCandidates[i] || campaignCandidates[0] || '', campaignCrosscheck);
       const adset = resolveByCrosscheck(adsetCandidates[i] || adsetCandidates[0] || '', adsetCrosscheck);
       const account = icAccount || campaignToAccount.get(campaign) || '';
-      return { date, account, campaign, adset, ad: resolveAdName(rawAd, date, adsByDate), mql, qualified, booked, audit, icRowId };
+      return { date, account, campaign, adset, ad: resolveAdName(rawAd, date, adsByDate), mql, qualified, booked, audit, email, leadScore: leadScoreText, icRowId };
     });
   });
 
@@ -1081,7 +1278,7 @@ async function loadAll() {
   const contactMap = new Map();
   icRows.forEach(r => {
     if (!contactMap.has(r.icRowId)) {
-      contactMap.set(r.icRowId, { date: r.date, mql: r.mql, qualified: r.qualified, booked: r.booked, audit: r.audit, touches: [] });
+      contactMap.set(r.icRowId, { date: r.date, mql: r.mql, qualified: r.qualified, booked: r.booked, audit: r.audit, email: r.email, leadScore: r.leadScore, touches: [] });
     }
     contactMap.get(r.icRowId).touches.push({ account: r.account, campaign: r.campaign, adset: r.adset });
   });
@@ -2199,6 +2396,272 @@ function setupPerfTable() {
 
 // ===================== ORCHESTRATION =====================
 
+// ===================== VIEW: LEADS =====================
+// Filtros PROPIOS (no comparte los de Performance, decisión del usuario): esta vista se navega por
+// cohorte y por lead puntual, no por el mismo recorte con el que se mira el media buying.
+
+const leadsFilterState = {
+  datePreset: 'all', dateFrom: null, dateTo: null,
+  account: new Set(), campaign: new Set(), adset: new Set(),
+  stage: 'all', search: '', grain: 'weekly'
+};
+let leadsSort = { key: 'date', dir: 'desc' };
+const LEADS_TABLE_LIMIT = 500; // se listan los primeros N; el resto se cuenta en la nota al pie
+
+// Un contacto multi-touch cuenta si ALGUNO de sus touches matchea, igual que en Performance --
+// no se puede exigir que todos matcheen, ese contacto no pertenece a una sola entidad.
+function getFilteredLeads() {
+  const f = leadsFilterState;
+  const hasEntity = f.account.size || f.campaign.size || f.adset.size;
+  const q = f.search.trim().toLowerCase();
+  return ICLOSED_CONTACTS.filter(c => {
+    if (f.dateFrom && c.date < f.dateFrom) return false;
+    if (f.dateTo && c.date > f.dateTo) return false;
+    if (f.stage === 'mql' && c.mql !== 'yes') return false;
+    if (f.stage === 'qualified' && !(c.mql === 'yes' && c.qualified)) return false;
+    if (f.stage === 'booked' && !c.booked) return false;
+    if (f.stage === 'audit' && !c.audit) return false;
+    if (q && !String(c.email || '').toLowerCase().includes(q)) return false;
+    if (!hasEntity) return true;
+    return c.touches.some(t =>
+      (!f.account.size || f.account.has(t.account)) &&
+      (!f.campaign.size || f.campaign.has(t.campaign)) &&
+      (!f.adset.size || f.adset.has(t.adset)));
+  });
+}
+
+// La etapa MÁS PROFUNDA a la que llegó el lead (para la columna "Furthest stage").
+function leadStage(c) {
+  if (c.audit) return 'Audit';
+  if (c.booked) return 'Booked';
+  if (c.mql === 'yes' && c.qualified) return 'Qualified MQL';
+  if (c.mql === 'yes') return 'Real MQL';
+  if (c.mql === 'no') return 'Spam';
+  return 'Lead';
+}
+
+// Cohorte = semana/mes en que se CREÓ el lead. Las etapas posteriores se cuentan en esa misma
+// cohorte aunque hayan ocurrido después: eso es lo que hace comparables las tasas entre cohortes.
+function computeCohorts(contacts, grain) {
+  const map = new Map();
+  contacts.forEach(c => {
+    if (!c.date) return;
+    const key = grain === 'monthly' ? c.date.slice(0, 7) : isoWeekStart(c.date);
+    if (!map.has(key)) map.set(key, { cohort: key, leads: 0, mql: 0, qualified: 0, booked: 0, qbooked: 0, audit: 0 });
+    const g = map.get(key);
+    g.leads++;
+    if (c.mql === 'yes') g.mql++;
+    if (c.mql === 'yes' && c.qualified) g.qualified++;
+    if (c.booked) g.booked++;
+    if (c.booked && c.qualified) g.qbooked++;
+    if (c.audit) g.audit++;
+  });
+  return Array.from(map.values()).sort((a, b) => (a.cohort < b.cohort ? 1 : -1)); // más reciente arriba
+}
+
+function renderLeadsFunnel(contacts) {
+  const total = contacts.length;
+  const mql = contacts.filter(c => c.mql === 'yes').length;
+  const qual = contacts.filter(c => c.mql === 'yes' && c.qualified).length;
+  const booked = contacts.filter(c => c.booked).length;
+  const audit = contacts.filter(c => c.audit).length;
+  const qbooked = contacts.filter(c => c.booked && c.qualified).length;
+  // OJO con el orden: Qualified MQL NO es padre de Booked -- un booking exige Real MQL, no que sea
+  // qualified, así que ponerlo como etapa intermedia daba pasos de >100% (Booked 104 vs Qual 24).
+  // Va resaltado DENTRO de su barra, igual que en el funnel de Performance. Así queda monótono.
+  const stages = [
+    { label: 'Leads', value: total, color: 'var(--funnel-3)' },
+    { label: 'Real MQL', value: mql, color: 'var(--funnel-5)', qual, qualLabel: 'Qualified MQL' },
+    { label: 'Booked', value: booked, color: 'var(--series-2)', qual: qbooked, qualLabel: 'Qualified Booking' },
+    { label: 'Audit', value: audit, color: 'var(--series-1)' }
+  ];
+  // misma escala log que el funnel de Performance, por el mismo motivo: el rango es muy amplio
+  const maxLog = Math.log10((stages[0].value || 1) + 1) || 1;
+  document.getElementById('leads-funnel').innerHTML = stages.map((st, i) => {
+    const widthPct = st.value > 0 ? Math.max(6, (Math.log10(st.value + 1) / maxLog) * 100) : 2;
+    const pctOfPrev = i === 0 ? null : safeDiv(st.value, stages[i - 1].value);
+    const hasQual = st.qual != null;
+    const qualFrac = hasQual && st.value > 0 ? safeDiv(st.qual, st.value) : 0;
+    const qualInner = hasQual ? `<div class="funnel-bar-qual" style="width:${qualFrac * 100}%"></div>` : '';
+    const note = hasQual
+      ? `<span class="funnel-qual-note"><span class="funnel-qual-swatch"></span>${st.qualLabel}: ${fmtInt(st.qual)} (${fmtPct(qualFrac)})</span>`
+      : (i === 0 ? '' : `<span class="funnel-qual-note">${fmtPct(safeDiv(st.value, total))} of all leads</span>`);
+    return `
+      <div class="funnel-row">
+        <div class="funnel-label">${st.label}</div>
+        <div class="funnel-bar-track"><div class="funnel-bar" style="width:${widthPct}%; background:${st.color}">${qualInner}</div>${note}</div>
+        <div class="funnel-value">${fmtInt(st.value)}</div>
+        <div class="funnel-pct">${pctOfPrev == null ? '' : fmtPct(pctOfPrev)}</div>
+      </div>`;
+  }).join('');
+}
+
+function renderCohortTable(contacts) {
+  const rows = computeCohorts(contacts, leadsFilterState.grain);
+  const tbody = document.querySelector('#cohort-table tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="11" class="caveat">No leads for these filters.</td></tr>';
+    return;
+  }
+  const label = (k) => leadsFilterState.grain === 'monthly'
+    ? new Date(k + '-01T00:00:00Z').toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+    : 'Week of ' + fmtDateLong(k);
+  tbody.innerHTML = rows.map(g => `
+    <tr>
+      <td>${label(g.cohort)}</td>
+      <td>${fmtInt(g.leads)}</td>
+      <td>${fmtInt(g.mql)}</td>
+      <td>${fmtPct(safeDiv(g.mql, g.leads))}</td>
+      <td>${fmtInt(g.qualified)}</td>
+      <td>${fmtPct(safeDiv(g.qualified, g.leads))}</td>
+      <td>${fmtInt(g.booked)}</td>
+      <td>${fmtPct(safeDiv(g.booked, g.leads))}</td>
+      <td>${fmtInt(g.qbooked)}</td>
+      <td>${fmtInt(g.audit)}</td>
+      <td>${fmtPct(safeDiv(g.audit, g.leads))}</td>
+    </tr>`).join('');
+}
+
+function renderLeadsTable(contacts) {
+  const uniq = (arr) => Array.from(new Set(arr.filter(Boolean))).join(', ');
+  const rows = contacts.map(c => ({
+    date: c.date,
+    email: c.email || '',
+    leadScore: c.leadScore || '',
+    mql: c.mql === 'yes' ? 'Yes' : c.mql === 'no' ? 'No' : '',
+    stage: leadStage(c),
+    account: uniq(c.touches.map(t => t.account)),
+    campaign: uniq(c.touches.map(t => t.campaign)),
+    adset: uniq(c.touches.map(t => t.adset))
+  }));
+  const { key, dir } = leadsSort;
+  rows.sort((a, b) => {
+    const va = String(a[key] || ''), vb = String(b[key] || '');
+    return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+  });
+
+  const shown = rows.slice(0, LEADS_TABLE_LIMIT);
+  const tbody = document.querySelector('#leads-table tbody');
+  tbody.innerHTML = shown.length
+    ? shown.map(r => `
+      <tr>
+        <td>${r.date}</td>
+        <td>${escapeHtml(r.email) || '<span class="caveat">—</span>'}</td>
+        <td>${escapeHtml(r.leadScore)}</td>
+        <td>${r.mql}</td>
+        <td>${r.stage}</td>
+        <td>${escapeHtml(r.account)}</td>
+        <td>${escapeHtml(r.campaign) || '<span class="caveat">(unattributed)</span>'}</td>
+        <td>${escapeHtml(r.adset)}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="8" class="caveat">No leads for these filters.</td></tr>';
+
+  document.getElementById('leads-table-note').textContent = rows.length > LEADS_TABLE_LIMIT
+    ? 'Showing the first ' + LEADS_TABLE_LIMIT + ' of ' + fmtInt(rows.length) + ' leads — narrow the filters to see the rest.'
+    : fmtInt(rows.length) + ' lead' + (rows.length === 1 ? '' : 's');
+}
+
+function renderLeads() {
+  const contacts = getFilteredLeads();
+  renderLeadsFunnel(contacts);
+  renderCohortTable(contacts);
+  renderLeadsTable(contacts);
+}
+
+function applyLeadsDatePreset(preset) {
+  leadsFilterState.datePreset = preset;
+  const isCustom = preset === 'custom';
+  document.getElementById('lf-custom-from-group').style.display = isCustom ? '' : 'none';
+  document.getElementById('lf-custom-to-group').style.display = isCustom ? '' : 'none';
+  const fromEl = document.getElementById('lf-date-from');
+  const toEl = document.getElementById('lf-date-to');
+
+  if (preset === 'all') {
+    leadsFilterState.dateFrom = null; leadsFilterState.dateTo = null;
+  } else if (isCustom) {
+    leadsFilterState.dateFrom = fromEl.value || leadsFilterState.dateFrom || dataMinDate;
+    leadsFilterState.dateTo = toEl.value || leadsFilterState.dateTo || dataMaxDate;
+    fromEl.value = leadsFilterState.dateFrom; toEl.value = leadsFilterState.dateTo;
+  } else {
+    const r = computePresetRange(preset, dataMinDate, dataMaxDate);
+    if (r) { leadsFilterState.dateFrom = r.from; leadsFilterState.dateTo = r.to; fromEl.value = r.from; toEl.value = r.to; }
+  }
+}
+
+function setupLeadsView() {
+  // opciones de entidad: las mismas que Performance, tomadas de los touches de los contactos
+  const accounts = uniqueSorted(ICLOSED_CONTACTS.flatMap(c => c.touches.map(t => t.account)).filter(Boolean));
+  const campaigns = uniqueSorted(ICLOSED_CONTACTS.flatMap(c => c.touches.map(t => t.campaign)).filter(Boolean));
+  const adsets = uniqueSorted(ICLOSED_CONTACTS.flatMap(c => c.touches.map(t => t.adset)).filter(Boolean));
+  buildMultiSelect('lmsel-account', 'Account', accounts, leadsFilterState.account, renderLeads);
+  buildMultiSelect('lmsel-campaign', 'Campaign', campaigns, leadsFilterState.campaign, renderLeads);
+  buildMultiSelect('lmsel-adset', 'Ad Set', adsets, leadsFilterState.adset, renderLeads);
+
+  const presetEl = document.getElementById('lf-date-preset');
+  presetEl.value = leadsFilterState.datePreset;
+  presetEl.addEventListener('change', () => { applyLeadsDatePreset(presetEl.value); renderLeads(); });
+  document.getElementById('lf-date-from').addEventListener('change', (e) => { leadsFilterState.dateFrom = e.target.value; renderLeads(); });
+  document.getElementById('lf-date-to').addEventListener('change', (e) => { leadsFilterState.dateTo = e.target.value; renderLeads(); });
+  document.getElementById('lf-stage').addEventListener('change', (e) => { leadsFilterState.stage = e.target.value; renderLeads(); });
+  document.getElementById('lf-grain').addEventListener('change', (e) => { leadsFilterState.grain = e.target.value; renderLeads(); });
+
+  // el search se debouncea para no re-renderizar la tabla en cada tecla
+  let searchTimer = null;
+  document.getElementById('lf-search').addEventListener('input', (e) => {
+    clearTimeout(searchTimer);
+    const v = e.target.value;
+    searchTimer = setTimeout(() => { leadsFilterState.search = v; renderLeads(); }, 200);
+  });
+
+  document.getElementById('lf-reset').addEventListener('click', () => {
+    leadsFilterState.account.clear(); leadsFilterState.campaign.clear(); leadsFilterState.adset.clear();
+    leadsFilterState.stage = 'all'; leadsFilterState.search = ''; leadsFilterState.datePreset = 'all';
+    document.getElementById('lf-stage').value = 'all';
+    document.getElementById('lf-search').value = '';
+    presetEl.value = 'all';
+    applyLeadsDatePreset('all');
+    setupLeadsView.rebuildSelects();
+    renderLeads();
+  });
+  setupLeadsView.rebuildSelects = () => {
+    buildMultiSelect('lmsel-account', 'Account', accounts, leadsFilterState.account, renderLeads);
+    buildMultiSelect('lmsel-campaign', 'Campaign', campaigns, leadsFilterState.campaign, renderLeads);
+    buildMultiSelect('lmsel-adset', 'Ad Set', adsets, leadsFilterState.adset, renderLeads);
+  };
+
+  document.querySelectorAll('#leads-table thead th').forEach(th => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => {
+      const k = th.dataset.key;
+      leadsSort = { key: k, dir: leadsSort.key === k && leadsSort.dir === 'desc' ? 'asc' : 'desc' };
+      renderLeads();
+    });
+  });
+
+  applyLeadsDatePreset(leadsFilterState.datePreset);
+}
+
+// ===================== NAVEGACIÓN (sidebar) =====================
+// Las vistas viven en el mismo documento y se togglean; no hay router ni carga extra.
+function showView(view) {
+  document.getElementById('view-performance').hidden = view !== 'performance';
+  document.getElementById('view-leads').hidden = view !== 'leads';
+  // la barra de filtros de Performance es suya, así que se oculta en Leads (que tiene la propia)
+  document.getElementById('filters-card').style.display = view === 'performance' ? '' : 'none';
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('is-active', b.dataset.view === view));
+  try { localStorage.setItem('ssw-view', view); } catch (e) { /* private mode */ }
+  if (view === 'leads') renderLeads();
+}
+
+function setupNav() {
+  document.querySelectorAll('.nav-item').forEach(b => {
+    b.addEventListener('click', () => showView(b.dataset.view));
+  });
+  let saved = 'performance';
+  try { saved = localStorage.getItem('ssw-view') || 'performance'; } catch (e) { /* private mode */ }
+  showView(saved === 'leads' ? 'leads' : 'performance');
+}
+
 function renderAll() {
   const rows = getFilteredRows();
   renderBigNumbers(rows);
@@ -2372,8 +2835,10 @@ async function init() {
     document.getElementById('app-status').style.display = 'none';
     document.getElementById('app-body').style.display = 'block';
     document.getElementById('btn-refresh-data').addEventListener('click', refreshData);
+    setupLeadsView();
     renderAll();
     renderDataFreshness();
+    setupNav(); // al final: decide qué vista se muestra y renderiza Leads si corresponde
   } catch (err) {
     console.error(err);
     document.getElementById('app-status').textContent = 'Error loading data: ' + err.message;
