@@ -2464,7 +2464,7 @@ function setupPerfTable() {
 // cohorte y por lead puntual, no por el mismo recorte con el que se mira el media buying.
 
 const leadsFilterState = {
-  datePreset: 'all', dateFrom: null, dateTo: null,
+  datePreset: 'last30', dateFrom: null, dateTo: null,
   account: new Set(), campaign: new Set(), adset: new Set(),
   stage: 'all', search: '', grain: 'weekly'
 };
@@ -2724,11 +2724,11 @@ function setupLeadsView() {
 
   document.getElementById('lf-reset').addEventListener('click', () => {
     leadsFilterState.account.clear(); leadsFilterState.campaign.clear(); leadsFilterState.adset.clear();
-    leadsFilterState.stage = 'all'; leadsFilterState.search = ''; leadsFilterState.datePreset = 'all';
+    leadsFilterState.stage = 'all'; leadsFilterState.search = ''; leadsFilterState.datePreset = 'last30';
     document.getElementById('lf-stage').value = 'all';
     document.getElementById('lf-search').value = '';
-    presetEl.value = 'all';
-    applyLeadsDatePreset('all');
+    presetEl.value = 'last30'; // Reset vuelve al MISMO default con el que carga la vista
+    applyLeadsDatePreset('last30');
     setupLeadsView.rebuildSelects();
     renderLeads();
   });
