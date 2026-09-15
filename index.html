@@ -9,6 +9,7 @@
 <style>
   :root {
     color-scheme: light;
+    --sidebar-w:      210px; /* no es de tema: lo usan el drawer, el margen del main y el botón */
     --surface-1:      #fcfcfb;
     --surface-2:      #f9f9f7;
     --text-primary:   #0b0b0b;
@@ -138,19 +139,57 @@
     margin-bottom: 24px;
   }
 
-  /* ---- layout con sidebar ---- */
-  .layout { display: flex; align-items: flex-start; gap: 0; }
-  .main-col { flex: 1; min-width: 0; padding: 24px; } /* min-width:0 es lo que deja que las tablas anchas scrolleen adentro en vez de estirar el layout */
+  /* ---- layout con sidebar desplegable ---- */
+  /* El sidebar es un drawer fijo que entra desde la izquierda. La columna principal se corre con
+     margin-left cuando está abierto (en desktop), así el contenido no queda tapado. */
+  .layout { display: block; }
+  .main-col {
+    min-width: 0; padding: 24px;
+    margin-left: 0;
+    transition: margin-left 0.18s ease;
+  }
+  .layout.is-open .main-col { margin-left: var(--sidebar-w); }
 
   .sidebar {
-    position: sticky;
-    top: 0;
-    flex: 0 0 186px;
-    align-self: stretch;
-    min-height: 100vh;
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    z-index: 200;
+    width: var(--sidebar-w);
     padding: 18px 12px;
     background: var(--surface-2);
     border-right: 1px solid var(--border);
+    transform: translateX(-100%);
+    transition: transform 0.18s ease;
+    overflow-y: auto;
+  }
+  .layout.is-open .sidebar { transform: translateX(0); }
+
+  /* botón hamburguesa: queda siempre accesible, se corre junto con el drawer */
+  .sidebar-toggle {
+    position: fixed; z-index: 201;
+    top: 14px; left: 14px;
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface-1); color: var(--text);
+    font-size: 15px; line-height: 1; cursor: pointer;
+    transition: left 0.18s ease;
+  }
+  .layout.is-open .sidebar-toggle { left: calc(var(--sidebar-w) + 14px); }
+  .sidebar-toggle:hover { border-color: var(--series-1); color: var(--series-1); }
+  /* el header arranca más a la derecha para no quedar debajo del botón */
+  .main-col > .brand-header { padding-left: 42px; }
+  .layout.is-open .main-col > .brand-header { padding-left: 0; }
+
+  /* fondo oscuro sólo en pantallas chicas, donde el drawer se superpone al contenido */
+  .sidebar-backdrop { display: none; }
+  @media (max-width: 760px) {
+    .layout.is-open .main-col { margin-left: 0; }
+    .layout.is-open .sidebar-backdrop {
+      display: block; position: fixed; inset: 0; z-index: 199;
+      background: rgba(0,0,0,0.45);
+    }
+    .layout.is-open .sidebar-toggle { left: calc(var(--sidebar-w) + 14px); }
   }
   .sidebar-brand {
     font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
@@ -169,18 +208,6 @@
   }
   .nav-item:hover { background: var(--highlight-bg); }
   .nav-item.is-active { background: var(--highlight-bg); color: var(--series-1); font-weight: 600; }
-
-  /* En pantallas angostas el sidebar pasa a ser una barra horizontal arriba */
-  @media (max-width: 760px) {
-    .layout { flex-direction: column; }
-    .sidebar {
-      flex: none; width: 100%; min-height: 0; position: static;
-      border-right: 0; border-bottom: 1px solid var(--border); padding: 10px 12px;
-    }
-    .sidebar-brand { display: none; }
-    .sidebar-nav { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
-    .nav-section { padding: 0 4px; }
-  }
 
   #filters-card {
     position: sticky;
@@ -220,6 +247,35 @@
   }
   .data-freshness button:hover { border-color: var(--series-1); }
   .data-freshness button[disabled] { opacity: 0.55; cursor: default; }
+
+  /* ---- cards de cohorts ---- */
+  /* Una card por cohorte, en scroll horizontal (la más reciente a la izquierda). Las barras son el
+     % de ESA cohorte, no valores absolutos, así una cohorte de 11 leads se compara con una de 178. */
+  .cohort-cards {
+    display: flex; gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 10px;
+    margin-bottom: 4px;
+  }
+  .cohort-card {
+    flex: 0 0 210px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px 14px;
+  }
+  .cohort-card.is-partial { border-style: dashed; }
+  .cohort-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .cohort-card-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); white-space: nowrap; }
+  .cohort-card-leads { font-size: 16px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  .cohort-card-tag { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+  .cohort-stage { margin-top: 8px; }
+  .cohort-stage-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; margin-bottom: 3px; }
+  .cohort-stage-label { color: var(--text-muted); font-weight: 600; }
+  .cohort-stage-val { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+  .cohort-stage-track { height: 7px; border-radius: 4px; background: var(--gridline); overflow: hidden; }
+  .cohort-stage-bar { height: 100%; border-radius: 4px; }
+  .cohort-table-title { font-size: 13px; color: var(--text-secondary); margin: 22px 0 10px; }
 
   .cohort-note {
     display: flex;
@@ -419,7 +475,9 @@
 
 <div id="dashboard-content" style="display:none;">
 
-<div class="layout">
+<div class="layout" id="layout">
+  <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="Show or hide menu" aria-expanded="false">☰</button>
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">SSW</div>
     <nav class="sidebar-nav">
@@ -888,7 +946,10 @@
       </select>
       <span>of lead creation</span>
     </h2>
-    <p class="caveat" style="margin:0 0 16px;">Rows are cohorts by creation date; each stage shows the count and its % of that cohort's leads. The last cohort is usually still maturing — leads can still book or be audited — so read its rates as a floor, not a final number.</p>
+    <p class="caveat" style="margin:0 0 16px;">Each card is one cohort: the bars are the share of that cohort's leads reaching each stage, so cards are comparable regardless of size. Scroll sideways for older cohorts. The most recent cohort is still maturing — its leads can still book or be audited — so read it as a floor, not a final number.</p>
+    <div class="cohort-cards" id="cohort-cards"></div>
+
+    <h3 class="cohort-table-title">Same cohorts as a table</h3>
     <div class="table-wrap">
       <table id="cohort-table">
         <thead>
@@ -2496,6 +2557,51 @@ function renderLeadsFunnel(contacts) {
   }).join('');
 }
 
+function cohortLabel(key) {
+  return leadsFilterState.grain === 'monthly'
+    ? new Date(key + '-01T00:00:00Z').toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+    : new Date(key + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+// Una card por cohorte. Las barras son % DE ESA COHORTE (no absolutos) para que cohortes de tamaño
+// muy distinto se puedan comparar de un vistazo. Misma paleta que el funnel, así se leen igual.
+function renderCohortCards(contacts) {
+  const rows = computeCohorts(contacts, leadsFilterState.grain);
+  const el = document.getElementById('cohort-cards');
+  if (!rows.length) { el.innerHTML = '<p class="caveat">No leads for these filters.</p>'; return; }
+
+  // La cohorte más reciente casi siempre está incompleta (sus leads todavía pueden avanzar de
+  // etapa), así que se marca para que no se lea como un resultado cerrado.
+  const newest = rows[0].cohort;
+  const stages = [
+    { key: 'mql', label: 'Real MQL', color: 'var(--funnel-5)' },
+    { key: 'qualified', label: 'Qualified', color: 'var(--qual-highlight)' },
+    { key: 'booked', label: 'Booked', color: 'var(--series-2)' },
+    { key: 'audit', label: 'Audit', color: 'var(--series-1)' }
+  ];
+  el.innerHTML = rows.map(g => {
+    const bars = stages.map(st => {
+      const pct = safeDiv(g[st.key], g.leads);
+      return `
+        <div class="cohort-stage">
+          <div class="cohort-stage-top">
+            <span class="cohort-stage-label">${st.label}</span>
+            <span class="cohort-stage-val">${fmtPct(pct)} · ${fmtInt(g[st.key])}</span>
+          </div>
+          <div class="cohort-stage-track"><div class="cohort-stage-bar" style="width:${Math.min(100, pct * 100)}%; background:${st.color}"></div></div>
+        </div>`;
+    }).join('');
+    return `
+      <div class="cohort-card${g.cohort === newest ? ' is-partial' : ''}">
+        <div class="cohort-card-head">
+          <span class="cohort-card-title">${cohortLabel(g.cohort)}${g.cohort === newest ? '<br><span class="cohort-card-tag">in progress</span>' : ''}</span>
+          <span class="cohort-card-leads">${fmtInt(g.leads)}</span>
+        </div>
+        ${bars}
+      </div>`;
+  }).join('');
+}
+
 function renderCohortTable(contacts) {
   const rows = computeCohorts(contacts, leadsFilterState.grain);
   const tbody = document.querySelector('#cohort-table tbody');
@@ -2564,6 +2670,7 @@ function renderLeadsTable(contacts) {
 function renderLeads() {
   const contacts = getFilteredLeads();
   renderLeadsFunnel(contacts);
+  renderCohortCards(contacts);
   renderCohortTable(contacts);
   renderLeadsTable(contacts);
 }
@@ -2653,9 +2760,35 @@ function showView(view) {
   if (view === 'leads') renderLeads();
 }
 
+// Drawer: se abre/cierra con el botón, el backdrop (en pantallas chicas) o Escape. El estado se
+// recuerda, pero arranca cerrado en pantallas angostas para no tapar el contenido al entrar.
+function setSidebarOpen(open) {
+  document.getElementById('layout').classList.toggle('is-open', open);
+  document.getElementById('sidebar-toggle').setAttribute('aria-expanded', String(open));
+  try { localStorage.setItem('ssw-sidebar', open ? 'open' : 'closed'); } catch (e) { /* private mode */ }
+}
+
+function setupSidebar() {
+  const toggle = document.getElementById('sidebar-toggle');
+  toggle.addEventListener('click', () => {
+    setSidebarOpen(!document.getElementById('layout').classList.contains('is-open'));
+  });
+  document.getElementById('sidebar-backdrop').addEventListener('click', () => setSidebarOpen(false));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setSidebarOpen(false); });
+
+  let saved = null;
+  try { saved = localStorage.getItem('ssw-sidebar'); } catch (e) { /* private mode */ }
+  const narrow = window.matchMedia('(max-width: 760px)').matches;
+  setSidebarOpen(saved ? saved === 'open' : !narrow);
+}
+
 function setupNav() {
   document.querySelectorAll('.nav-item').forEach(b => {
-    b.addEventListener('click', () => showView(b.dataset.view));
+    b.addEventListener('click', () => {
+      showView(b.dataset.view);
+      // en pantallas chicas el drawer tapa el contenido, así que se cierra al elegir
+      if (window.matchMedia('(max-width: 760px)').matches) setSidebarOpen(false);
+    });
   });
   let saved = 'performance';
   try { saved = localStorage.getItem('ssw-view') || 'performance'; } catch (e) { /* private mode */ }
@@ -2838,6 +2971,7 @@ async function init() {
     setupLeadsView();
     renderAll();
     renderDataFreshness();
+    setupSidebar();
     setupNav(); // al final: decide qué vista se muestra y renderiza Leads si corresponde
   } catch (err) {
     console.error(err);
