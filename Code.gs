@@ -167,6 +167,50 @@ function fetchMetaInsightsRaw(account, since, until, token) {
   return rows;
 }
 
+// DIAGNÓSTICO (temporal): para un día puntual, compara las variantes que Meta devuelve para clicks
+// y landing page views. Objetivo: saber si LP Views está inflado por usar omni_landing_page_view
+// (que agrega web+app) en vez de landing_page_view (el evento de pixel que muestra Ads Manager).
+// Correr: debugMetaClicksVsLpv('2026-09-09')
+function debugMetaClicksVsLpv(day) {
+  var token = PropertiesService.getScriptProperties().getProperty('META_TOKEN');
+  if (!token) throw new Error('Falta META_TOKEN');
+  var tot = { inline: 0, link_click: 0, lpv: 0, omni_lpv: 0, outbound: 0 };
+
+  META_ACCOUNTS.forEach(function (account) {
+    var url = 'https://graph.facebook.com/' + GRAPH_API_VERSION + '/' + account.id + '/insights'
+      + '?level=ad&time_increment=1&limit=500'
+      + '&time_range=' + encodeURIComponent(JSON.stringify({ since: day, until: day }))
+      + '&fields=ad_name,impressions,inline_link_clicks,outbound_clicks,actions'
+      + '&access_token=' + token;
+    var json = fetchJsonWithRetry(url, account.name);
+    (json.data || []).forEach(function (r) {
+      var inline = Number(r.inline_link_clicks || 0);
+      var lc = findAction(r.actions, ['link_click']);
+      var lpv = findAction(r.actions, ['landing_page_view']);
+      var omni = findAction(r.actions, ['omni_landing_page_view']);
+      var outb = findAction(r.outbound_clicks, ['outbound_click']);
+      tot.inline += inline; tot.link_click += lc; tot.lpv += lpv; tot.omni_lpv += omni; tot.outbound += outb;
+      if (inline > 0 || omni > 0) {
+        Logger.log(String(r.ad_name).substring(0, 38)
+          + ' | inline=' + inline + ' link_click=' + lc + ' outbound=' + outb
+          + ' || landing_page_view=' + lpv + ' omni_landing_page_view=' + omni);
+      }
+    });
+    Utilities.sleep(500);
+  });
+
+  Logger.log('======== TOTALES ' + day + ' ========');
+  Logger.log('inline_link_clicks     = ' + tot.inline + '   <- lo que se guarda hoy como Link Clicks');
+  Logger.log('action link_click      = ' + tot.link_click);
+  Logger.log('outbound_clicks        = ' + tot.outbound);
+  Logger.log('landing_page_view      = ' + tot.lpv + '   <- lo que muestra Ads Manager');
+  Logger.log('omni_landing_page_view = ' + tot.omni_lpv + '   <- lo que se guarda hoy como LP Views');
+  if (tot.inline) {
+    Logger.log('LPV/clicks con landing_page_view      = ' + (100 * tot.lpv / tot.inline).toFixed(1) + '%');
+    Logger.log('LPV/clicks con omni_landing_page_view = ' + (100 * tot.omni_lpv / tot.inline).toFixed(1) + '%');
+  }
+}
+
 function buildMetaRow(r, account, thumbnails) {
   return [
     r.date_start,
