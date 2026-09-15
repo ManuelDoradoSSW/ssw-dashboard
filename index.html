@@ -267,10 +267,15 @@
     padding: 12px 14px 14px;
   }
   .cohort-card.is-partial { border-style: dashed; }
-  .cohort-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .cohort-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .cohort-card-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); white-space: nowrap; }
-  .cohort-card-leads { font-size: 16px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
   .cohort-card-tag { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+  /* El total es la BASE de todos los % de abajo, así que va etiquetado y separado de las barras
+     con una línea -- suelto se leía como un dato más y no se entendía qué contaba. */
+  .cohort-card-total { display: flex; align-items: baseline; gap: 6px; padding: 6px 0 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  .cohort-card-leads { font-size: 22px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1; }
+  .cohort-card-leads-label { font-size: 10.5px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .cohort-card-bars { padding-top: 4px; }
   .cohort-stage { margin-top: 8px; }
   .cohort-stage-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; margin-bottom: 3px; }
   .cohort-stage-label { color: var(--text-muted); font-weight: 600; }
@@ -2596,10 +2601,14 @@ function renderCohortCards(contacts) {
     return `
       <div class="cohort-card${g.cohort === newest ? ' is-partial' : ''}">
         <div class="cohort-card-head">
-          <span class="cohort-card-title">${cohortLabel(g.cohort)}${g.cohort === newest ? '<br><span class="cohort-card-tag">in progress</span>' : ''}</span>
-          <span class="cohort-card-leads">${fmtInt(g.leads)}</span>
+          <span class="cohort-card-title">${cohortLabel(g.cohort)}</span>
+          ${g.cohort === newest ? '<span class="cohort-card-tag">in progress</span>' : ''}
         </div>
-        ${bars}
+        <div class="cohort-card-total">
+          <span class="cohort-card-leads">${fmtInt(g.leads)}</span>
+          <span class="cohort-card-leads-label">leads in cohort</span>
+        </div>
+        <div class="cohort-card-bars">${bars}</div>
       </div>`;
   }).join('');
 }
@@ -2611,9 +2620,10 @@ function renderCohortTable(contacts) {
     tbody.innerHTML = '<tr><td colspan="11" class="caveat">No leads for these filters.</td></tr>';
     return;
   }
+  // mismo label corto que las cards: "Week of September 14, 2026" se truncaba en la columna
   const label = (k) => leadsFilterState.grain === 'monthly'
-    ? new Date(k + '-01T00:00:00Z').toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })
-    : 'Week of ' + fmtDateLong(k);
+    ? cohortLabel(k)
+    : 'Wk ' + cohortLabel(k);
   tbody.innerHTML = rows.map(g => `
     <tr>
       <td>${label(g.cohort)}</td>
