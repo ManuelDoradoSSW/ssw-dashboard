@@ -209,7 +209,9 @@
   .nav-item:hover { background: var(--highlight-bg); }
   .nav-item.is-active { background: var(--highlight-bg); color: var(--series-1); font-weight: 600; }
 
-  #filters-card {
+  /* Las dos barras de filtros (Performance y Leads) se pegan arriba al scrollear. z-index por
+     debajo del drawer (200) para que el sidebar abierto siga quedando por encima. */
+  #filters-card, #leads-filters-card {
     position: sticky;
     top: 0;
     z-index: 100;
