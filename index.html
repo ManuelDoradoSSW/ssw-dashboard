@@ -161,6 +161,7 @@
     transform: translateX(-100%);
     transition: transform 0.18s ease;
     overflow-y: auto;
+    display: flex; flex-direction: column;
   }
   .layout.is-open .sidebar { transform: translateX(0); }
 
@@ -191,23 +192,57 @@
     }
     .layout.is-open .sidebar-toggle { left: calc(var(--sidebar-w) + 14px); }
   }
-  .sidebar-brand {
-    font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
-    color: var(--text-muted); padding: 0 10px 14px; text-transform: uppercase;
+  .sidebar-head {
+    display: flex; align-items: center; gap: 9px;
+    padding: 4px 8px 16px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
   }
-  .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+  .sidebar-logo { width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0; }
+  .sidebar-word { font-size: 14px; font-weight: 700; letter-spacing: 0.02em; color: var(--text-primary); }
+
+  .sidebar-nav { display: flex; flex-direction: column; gap: 1px; }
   .nav-section {
-    font-size: 10.5px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
-    color: var(--text-muted); opacity: 0.75; padding: 14px 10px 5px;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--text-muted); opacity: 0.7; padding: 16px 10px 6px;
   }
-  .nav-item {
-    display: block; width: 100%; text-align: left;
-    padding: 8px 10px; border: 0; border-radius: 7px;
-    background: transparent; color: var(--text);
-    font-size: 13px; font-family: inherit; cursor: pointer;
+
+  /* Ítem de navegación: la barra de acento a la izquierda marca el activo sin depender solo del
+     color de texto (queda legible en ambos temas). El ::before ocupa lugar siempre para que el
+     texto no salte al activarse. */
+  .nav-item, .nav-util {
+    position: relative;
+    display: flex; align-items: center; gap: 9px;
+    width: 100%; text-align: left;
+    padding: 8px 10px;
+    border: 0; border-radius: 8px;
+    background: transparent; color: var(--text-secondary);
+    font-size: 13.5px; font-family: inherit; font-weight: 500;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
   }
-  .nav-item:hover { background: var(--highlight-bg); }
-  .nav-item.is-active { background: var(--highlight-bg); color: var(--series-1); font-weight: 600; }
+  .nav-item::before {
+    content: ''; position: absolute; left: 0; top: 50%;
+    width: 3px; height: 0; border-radius: 0 3px 3px 0;
+    background: var(--accent);
+    transform: translateY(-50%);
+    transition: height 0.14s ease;
+  }
+  .nav-item:hover, .nav-util:hover { background: var(--highlight-bg); color: var(--text-primary); }
+  .nav-item.is-active { background: var(--highlight-bg); color: var(--text-primary); font-weight: 600; }
+  .nav-item.is-active::before { height: 18px; }
+  .nav-item.is-active .nav-icon { color: var(--accent); }
+
+  .nav-icon { width: 16px; height: 16px; flex-shrink: 0; opacity: 0.95; }
+
+  /* Zona inferior: utilidades separadas de la navegación, ancladas al pie del drawer */
+  .sidebar-foot {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .sidebar-meta { font-size: 10.5px; color: var(--text-muted); padding: 8px 10px 2px; font-variant-numeric: tabular-nums; }
 
   /* Las dos barras de filtros (Performance y Leads) se pegan arriba al scrollear. z-index por
      debajo del drawer (200) para que el sidebar abierto siga quedando por encima. */
@@ -302,14 +337,45 @@
   .cohort-note-icon { color: var(--series-1); font-size: 14px; line-height: 1.3; flex-shrink: 0; }
   .filter-group { display: flex; flex-direction: column; gap: 4px; }
   .filter-group label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; font-weight: 700; }
-  input[type=date], select, button {
+  input[type=date], input[type=search], input[type=text], select, button {
     font-family: inherit; font-size: 13px;
     background: var(--surface-1); color: var(--text-primary);
     border: 1px solid var(--border); border-radius: 8px;
     padding: 7px 10px;
+    height: 34px; /* altura pareja: sin esto select/input/button no se alineaban entre sí */
+    box-sizing: border-box;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
   }
-  button { cursor: pointer; }
+  input[type=date]:hover, input[type=search]:hover, select:hover, button:hover { border-color: var(--text-muted); }
+  /* foco visible y consistente: el outline del browser variaba por control y quedaba sucio */
+  input:focus-visible, select:focus-visible, button:focus-visible {
+    outline: none;
+    border-color: var(--series-1);
+    box-shadow: 0 0 0 3px var(--highlight-bg);
+  }
+  /* chevron propio: el nativo no se puede teñir y desentonaba en dark */
+  select {
+    -webkit-appearance: none; appearance: none;
+    padding-right: 28px;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: calc(100% - 15px) calc(50% + 1px), calc(100% - 11px) calc(50% + 1px);
+    background-size: 4px 4px, 4px 4px;
+    background-repeat: no-repeat;
+  }
+  button { cursor: pointer; font-weight: 500; }
   button:hover { background: var(--surface-2); }
+  input[type=search] { min-width: 180px; }
+  input[type=search]::placeholder { color: var(--text-muted); }
+
+  /* Excepciones al bloque genérico de controles (que fija height/padding/chevron): estos botones y
+     selects tienen su propia forma y quedaban deformados al heredarlo. */
+  .nav-item, .nav-util, .sidebar-toggle, .data-freshness button, .msel-actions a { height: auto; }
+  .nav-item:hover, .nav-util:hover { border-color: transparent; }
+  .inline-metric-select {
+    height: auto; padding: 0 14px 2px 0; background-color: transparent;
+    background-position: right 2px calc(50% + 1px), right 6px calc(50% + 1px);
+  }
+  .inline-metric-select:hover { border-color: transparent; border-bottom-color: var(--accent); }
   .msel { position: relative; }
   .msel-btn { min-width: 160px; text-align: left; display: flex; justify-content: space-between; gap: 8px; }
   .msel-panel {
@@ -486,14 +552,40 @@
   <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="Show or hide menu" aria-expanded="false">☰</button>
   <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
   <aside class="sidebar" id="sidebar">
-    <div class="sidebar-brand">SSW</div>
+    <div class="sidebar-head">
+      <img class="sidebar-logo" src="" alt="" id="sidebar-logo">
+      <span class="sidebar-word">SSW</span>
+    </div>
+
     <nav class="sidebar-nav">
       <div class="nav-section">Performance</div>
-      <button type="button" class="nav-item" data-view="performance">Meta Ads</button>
+      <button type="button" class="nav-item" data-view="performance">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12l4-4.5 3 2.5 5-6"/><path d="M10.5 4H14v3.5"/></svg>
+        <span>Meta Ads</span>
+      </button>
+
       <div class="nav-section">Leads</div>
-      <button type="button" class="nav-item" data-view="cohorts">Cohorts</button>
-      <button type="button" class="nav-item" data-view="contacts">Contacts</button>
+      <button type="button" class="nav-item" data-view="cohorts">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l6 3.3-6 3.3-6-3.3 6-3.3z"/><path d="M2 10.2l6 3.3 6-3.3"/></svg>
+        <span>Cohorts</span>
+      </button>
+      <button type="button" class="nav-item" data-view="contacts">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5.5" r="2.4"/><path d="M1.8 13.4c0-2.3 1.9-3.9 4.2-3.9s4.2 1.6 4.2 3.9"/><path d="M11 3.5a2.4 2.4 0 010 4.3M14.2 13.4c0-1.7-.9-2.9-2.3-3.5"/></svg>
+        <span>Contacts</span>
+      </button>
     </nav>
+
+    <div class="sidebar-foot">
+      <button type="button" class="nav-util" id="btn-theme">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="3.1"/><path d="M8 1.3v1.6M8 13.1v1.6M14.7 8h-1.6M2.9 8H1.3M12.7 3.3l-1.1 1.1M4.4 11.6l-1.1 1.1M12.7 12.7l-1.1-1.1M4.4 4.4L3.3 3.3"/></svg>
+        <span id="btn-theme-label">Dark</span>
+      </button>
+      <button type="button" class="nav-util" id="btn-collapse">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 4.5L6 8l3.5 3.5"/><path d="M13 2.5v11"/></svg>
+        <span>Collapse</span>
+      </button>
+      <div class="sidebar-meta" id="sidebar-meta"></div>
+    </div>
   </aside>
   <main class="main-col">
 
@@ -550,12 +642,6 @@
       <label>&nbsp;</label>
       <label class="compare-toggle">
         <input type="checkbox" id="f-compare"> Compare
-      </label>
-    </div>
-    <div class="filter-group">
-      <label>&nbsp;</label>
-      <label class="compare-toggle">
-        <input type="checkbox" id="f-dark-mode"> Dark mode
       </label>
     </div>
     <div class="filter-group" id="compare-mode-group" style="display:none;">
@@ -1099,7 +1185,6 @@ function initTheme() {
     ? stored
     : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   setTheme(theme);
-  document.getElementById('f-dark-mode').checked = theme === 'dark';
 }
 initTheme();
 
@@ -1111,12 +1196,22 @@ initTheme();
   if (logo && fav && logo.src) fav.href = logo.src;
 })();
 
-document.getElementById('f-dark-mode').addEventListener('change', (e) => {
-  setTheme(e.target.checked ? 'dark' : 'light');
+// El toggle de tema vive en el pie del sidebar (antes era un checkbox suelto entre los filtros de
+// Performance, donde no se encontraba y no existía en las vistas de Leads).
+function toggleTheme() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  setTheme(dark ? 'light' : 'dark');
+  syncThemeButton();
   // Chart.js lee los colores de las CSS vars al crear el canvas, no reactivamente --
   // hay que re-renderear para que los charts tomen la paleta nueva
   renderAll();
-});
+}
+
+// El botón ofrece el tema al que vas a cambiar, no el actual.
+function syncThemeButton() {
+  const label = document.getElementById('btn-theme-label');
+  if (label) label.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? 'Light' : 'Dark';
+}
 
 // ===================== GVIZ FETCH =====================
 
@@ -2800,6 +2895,14 @@ function setSidebarOpen(open) {
 }
 
 function setupSidebar() {
+  // el logo del sidebar reusa el mismo data-URI del header, para no duplicar el base64
+  const brand = document.querySelector('.brand-logo');
+  if (brand) document.getElementById('sidebar-logo').src = brand.src;
+
+  document.getElementById('btn-collapse').addEventListener('click', () => setSidebarOpen(false));
+  document.getElementById('btn-theme').addEventListener('click', toggleTheme);
+  syncThemeButton();
+
   const toggle = document.getElementById('sidebar-toggle');
   toggle.addEventListener('click', () => {
     setSidebarOpen(!document.getElementById('layout').classList.contains('is-open'));
@@ -2961,6 +3064,10 @@ function renderDataFreshness() {
     + ' · loaded at ' + hora
     + (stale ? ' · out of date, refresh' : '');
   el.classList.toggle('is-stale', !!stale);
+
+  // eco compacto en el pie del sidebar: se ve desde cualquier vista, no solo en Performance
+  const meta = document.getElementById('sidebar-meta');
+  if (meta) meta.textContent = (dataMaxDate ? 'Data to ' + dataMaxDate : '') + (stale ? ' · stale' : '');
 }
 
 async function refreshData() {
