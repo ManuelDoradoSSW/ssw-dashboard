@@ -491,7 +491,8 @@
       <div class="nav-section">Performance</div>
       <button type="button" class="nav-item" data-view="performance">Meta Ads</button>
       <div class="nav-section">Leads</div>
-      <button type="button" class="nav-item" data-view="leads">Cohorts &amp; Contacts</button>
+      <button type="button" class="nav-item" data-view="cohorts">Cohorts</button>
+      <button type="button" class="nav-item" data-view="contacts">Contacts</button>
     </nav>
   </aside>
   <main class="main-col">
@@ -875,8 +876,8 @@
   </div>
 </section>
 
-<section id="view-leads" hidden>
-
+<!-- Filtros compartidos por las dos vistas de Leads; viven afuera para no duplicar IDs -->
+<div id="leads-filters-wrap" hidden>
   <div class="card" id="leads-filters-card">
     <div class="filters">
       <div class="filter-group">
@@ -932,12 +933,11 @@
         <button id="lf-reset">Reset filters</button>
       </div>
     </div>
-    <div class="cohort-note">
-      <span class="cohort-note-icon" aria-hidden="true">ⓘ</span>
-      <span>Every lead is counted in the cohort of the week or month it was <strong>created</strong>, and its later stages count in that same cohort — so a lead created in week 1 that books in week 3 still shows under week 1. That is what makes the conversion rates comparable across cohorts.</span>
-    </div>
   </div>
 
+</div>
+
+<section id="view-cohorts" hidden>
   <div class="card">
     <h2>Lead funnel</h2>
     <p class="caveat" style="margin:0 0 16px;">Each stage as a share of all leads, and the step-to-step conversion. Follows the filters above.</p>
@@ -953,6 +953,10 @@
       </select>
       <span>of lead creation</span>
     </h2>
+    <div class="cohort-note">
+      <span class="cohort-note-icon" aria-hidden="true">ⓘ</span>
+      <span>Every lead is counted in the cohort of the week or month it was <strong>created</strong>, and its later stages count in that same cohort — so a lead created in week 1 that books in week 3 still shows under week 1. That is what makes the conversion rates comparable across cohorts.</span>
+    </div>
     <p class="caveat" style="margin:0 0 16px;">Each card is one cohort: the bars are the share of that cohort's leads reaching each stage, so cards are comparable regardless of size. Scroll sideways for older cohorts. The most recent cohort is still maturing — its leads can still book or be audited — so read it as a floor, not a final number.</p>
     <div class="cohort-cards" id="cohort-cards"></div>
 
@@ -979,6 +983,9 @@
     </div>
   </div>
 
+</section>
+
+<section id="view-contacts" hidden>
   <div class="card">
     <h2 style="margin-bottom:6px;">Leads</h2>
     <p class="caveat" style="margin:0 0 16px;">One row per contact (deduplicated). Attribution comes from the contact's own UTMs; a lead that touched more than one ad set shows them comma-separated. Click a header to sort.</p>
@@ -2679,12 +2686,18 @@ function renderLeadsTable(contacts) {
     : fmtInt(rows.length) + ' lead' + (rows.length === 1 ? '' : 's');
 }
 
+// Cohorts y Contacts comparten filtros pero se renderizan por separado: la tabla de contactos
+// pinta cientos de filas, y no tiene sentido rehacerla al mover un filtro estando en Cohorts.
 function renderLeads() {
   const contacts = getFilteredLeads();
-  renderLeadsFunnel(contacts);
-  renderCohortCards(contacts);
-  renderCohortTable(contacts);
-  renderLeadsTable(contacts);
+  if (!document.getElementById('view-cohorts').hidden) {
+    renderLeadsFunnel(contacts);
+    renderCohortCards(contacts);
+    renderCohortTable(contacts);
+  }
+  if (!document.getElementById('view-contacts').hidden) {
+    renderLeadsTable(contacts);
+  }
 }
 
 function applyLeadsDatePreset(preset) {
@@ -2762,14 +2775,20 @@ function setupLeadsView() {
 
 // ===================== NAVEGACIÓN (sidebar) =====================
 // Las vistas viven en el mismo documento y se togglean; no hay router ni carga extra.
+const VIEWS = ['performance', 'cohorts', 'contacts'];
+
 function showView(view) {
+  if (VIEWS.indexOf(view) === -1) view = 'performance';
   document.getElementById('view-performance').hidden = view !== 'performance';
-  document.getElementById('view-leads').hidden = view !== 'leads';
-  // la barra de filtros de Performance es suya, así que se oculta en Leads (que tiene la propia)
+  document.getElementById('view-cohorts').hidden = view !== 'cohorts';
+  document.getElementById('view-contacts').hidden = view !== 'contacts';
+  // cada familia de vistas tiene su barra: la de Performance es suya, y Cohorts/Contacts comparten
+  // la de Leads (está fuera de ambas secciones justamente para no duplicar IDs).
   document.getElementById('filters-card').style.display = view === 'performance' ? '' : 'none';
+  document.getElementById('leads-filters-wrap').hidden = view === 'performance';
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('is-active', b.dataset.view === view));
   try { localStorage.setItem('ssw-view', view); } catch (e) { /* private mode */ }
-  if (view === 'leads') renderLeads();
+  if (view !== 'performance') renderLeads();
 }
 
 // Drawer: se abre/cierra con el botón, el backdrop (en pantallas chicas) o Escape. El estado se
@@ -2804,7 +2823,8 @@ function setupNav() {
   });
   let saved = 'performance';
   try { saved = localStorage.getItem('ssw-view') || 'performance'; } catch (e) { /* private mode */ }
-  showView(saved === 'leads' ? 'leads' : 'performance');
+  if (saved === 'leads') saved = 'cohorts'; // la vista "leads" se dividió en cohorts + contacts
+  showView(saved);
 }
 
 function renderAll() {
