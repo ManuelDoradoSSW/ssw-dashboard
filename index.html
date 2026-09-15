@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SSW Account Dashboard — Meta Ads</title>
 <link rel="icon" id="favicon" type="image/jpeg" href="data:image/jpeg;base64,">
+<script>
+  // Se resuelve el tema ACÁ, antes de pintar nada: el script principal está al final del body, así
+  // que aplicarlo allá hacía que la página se viera clara un instante y recién después pasara a
+  // oscuro. Default = dark; una elección guardada siempre gana.
+  (function () {
+    var t = 'dark';
+    try { var v = localStorage.getItem('ssw-dashboard-theme'); if (v === 'light' || v === 'dark') t = v; } catch (e) {}
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root {
@@ -1181,9 +1191,8 @@ function setTheme(theme) {
 
 function initTheme() {
   const stored = localStorage.getItem(THEME_KEY);
-  const theme = (stored === 'dark' || stored === 'light')
-    ? stored
-    : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  // Default DARK (pedido del usuario), no el preferido del SO. Una elección guardada siempre gana.
+  const theme = (stored === 'dark' || stored === 'light') ? stored : 'dark';
   setTheme(theme);
 }
 initTheme();
