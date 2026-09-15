@@ -153,6 +153,30 @@
     align-items: flex-end;
   }
 
+  /* El dashboard descarga la Sheet UNA vez al cargar y la deja en memoria. Una pestaña abierta de
+     ayer muestra números viejos sin ningún indicio -- ya pasó: un ad set marcaba $559 en vez de
+     $894 porque a esa copia le faltaba el último día. Esto hace visible la frescura del dato. */
+  .data-freshness {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .data-freshness.is-stale { color: var(--series-2); font-weight: 600; }
+  .data-freshness button {
+    padding: 4px 10px;
+    font-size: 11.5px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .data-freshness button:hover { border-color: var(--series-1); }
+  .data-freshness button[disabled] { opacity: 0.55; cursor: default; }
+
   .cohort-note {
     display: flex;
     align-items: flex-start;
@@ -424,6 +448,10 @@
       <label>Custom to</label>
       <input type="date" id="f-compare-to">
     </div>
+  </div>
+  <div class="data-freshness" id="data-freshness">
+    <span id="data-freshness-text">–</span>
+    <button id="btn-refresh-data" type="button">Refresh data</button>
   </div>
   <div class="cohort-note">
     <span class="cohort-note-icon" aria-hidden="true">ⓘ</span>
@@ -2183,7 +2211,10 @@ function renderAll() {
 
 let dataMinDate = null, dataMaxDate = null;
 
-function setupDateFilters() {
+// rebind:false lo usa refreshData() -- recalcula el rango con el dato nuevo SIN volver a registrar
+// los listeners (si no, cada refresh los duplicaría y renderAll correría de más).
+function setupDateFilters(opts) {
+  const rebind = !opts || opts.rebind !== false;
   const dates = uniqueSorted(UNIFIED.map(r => r.date));
   dataMinDate = dates[0]; dataMaxDate = dates[dates.length - 1];
 
@@ -2191,12 +2222,14 @@ function setupDateFilters() {
   const toEl = document.getElementById('f-date-to');
   fromEl.min = dataMinDate; fromEl.max = dataMaxDate;
   toEl.min = dataMinDate; toEl.max = dataMaxDate;
-  fromEl.addEventListener('change', () => { filterState.dateFrom = fromEl.value; renderAll(); });
-  toEl.addEventListener('change', () => { filterState.dateTo = toEl.value; renderAll(); });
 
   const presetEl = document.getElementById('f-date-preset');
+  if (rebind) {
+    fromEl.addEventListener('change', () => { filterState.dateFrom = fromEl.value; renderAll(); });
+    toEl.addEventListener('change', () => { filterState.dateTo = toEl.value; renderAll(); });
+    presetEl.addEventListener('change', () => applyDatePreset(presetEl.value));
+  }
   presetEl.value = filterState.datePreset;
-  presetEl.addEventListener('change', () => applyDatePreset(presetEl.value));
   applyDatePreset(presetEl.value, { skipRender: true });
 }
 
@@ -2280,9 +2313,53 @@ document.getElementById('f-compare-to').addEventListener('change', (e) => {
   renderAll();
 });
 
+let dataLoadedAt = null;
+
+// El dato se descarga una vez por carga de página y queda en memoria. Sin esto, una pestaña vieja
+// muestra números desactualizados sin avisar (caso real: $559 en vez de $894 porque a esa copia le
+// faltaba el último día sincronizado). Marca en rojo si el último día del dato ya quedó atrasado
+// respecto de ayer -- el sync de Meta corre a las 3am, así que lo normal es tener hasta ayer.
+function renderDataFreshness() {
+  const el = document.getElementById('data-freshness');
+  const txt = document.getElementById('data-freshness-text');
+  if (!el || !txt || !dataLoadedAt) return;
+  const hora = dataLoadedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+  const hoy = new Date();
+  const ayer = new Date(hoy.getTime() - 86400000).toISOString().slice(0, 10);
+  const stale = dataMaxDate && dataMaxDate < ayer;
+
+  txt.textContent = 'Data through ' + (dataMaxDate ? fmtDateLong(dataMaxDate) : '–')
+    + ' · loaded at ' + hora
+    + (stale ? ' · out of date, refresh' : '');
+  el.classList.toggle('is-stale', !!stale);
+}
+
+async function refreshData() {
+  const btn = document.getElementById('btn-refresh-data');
+  const txt = document.getElementById('data-freshness-text');
+  if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…'; }
+  if (txt) txt.textContent = 'Fetching latest data…';
+  try {
+    await loadAll();
+    dataLoadedAt = new Date();
+    // el rango de fechas depende del dato, así que se recalcula por si entró un día nuevo
+    setupDateFilters({ rebind: false });
+    refreshFilterOptions();
+    renderAll();
+    renderDataFreshness();
+  } catch (err) {
+    console.error(err);
+    if (txt) txt.textContent = 'Refresh failed: ' + err.message;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Refresh data'; }
+  }
+}
+
 async function init() {
   try {
     await loadAll();
+    dataLoadedAt = new Date();
     if (UNIFIED.length === 0) throw new Error('No rows in Meta_Raw yet.');
     setupDateFilters();
     refreshFilterOptions();
@@ -2294,7 +2371,9 @@ async function init() {
       : '';
     document.getElementById('app-status').style.display = 'none';
     document.getElementById('app-body').style.display = 'block';
+    document.getElementById('btn-refresh-data').addEventListener('click', refreshData);
     renderAll();
+    renderDataFreshness();
   } catch (err) {
     console.error(err);
     document.getElementById('app-status').textContent = 'Error loading data: ' + err.message;
