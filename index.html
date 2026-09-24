@@ -1321,14 +1321,27 @@ function loadCreativeThumbs(table) {
   });
 }
 
-// Link al ad dentro de Ads Manager (queda preseleccionado). Devuelve '' si todavía no tenemos el
-// ad id -- el ad puede ser viejo/borrado, o la tab Creatives aún no se re-sincronizó.
-function metaAdUrl(adName) {
+// Nombre de cuenta -> id numérico. Espeja META_ACCOUNTS de Code.gs; si agregás una cuenta allá,
+// agregala acá. Se usa el nombre de cuenta de la FILA (Meta_Raw) y no la columna Account ID del tab
+// Creatives por dos motivos: esa columna venía vacía en 626 de 798 filas (Ads Manager abría
+// entonces la última cuenta vista, no la del ad), y como el tab se indexa por nombre de ad, un
+// mismo nombre en dos cuentas guardaba el id de la última procesada.
+const META_ACCOUNT_IDS = {
+  'SSW | 2026': '994485823231431',
+  'So Shall We USA': '2344085889130673',
+  'New Account SSW | 2026': '1626400979496060'
+};
+
+// Link al ad dentro de Ads Manager (queda preseleccionado). Devuelve '' si falta el ad id o si no
+// se puede resolver la cuenta: es preferible no mostrar link antes que mandarte a la cuenta
+// equivocada, que es justo lo que pasaba.
+function metaAdUrl(adName, accountName) {
   const m = CREATIVE_META.get(adName);
   if (!m || !m.adId) return '';
-  const acct = m.accountId ? 'act=' + encodeURIComponent(m.accountId) + '&' : '';
-  return 'https://adsmanager.facebook.com/adsmanager/manage/ads?' + acct
-    + 'selected_ad_ids=' + encodeURIComponent(m.adId);
+  const acct = META_ACCOUNT_IDS[accountName] || m.accountId;
+  if (!acct) return '';
+  return 'https://adsmanager.facebook.com/adsmanager/manage/ads?act=' + encodeURIComponent(acct)
+    + '&selected_ad_ids=' + encodeURIComponent(m.adId);
 }
 
 // ===================== LOAD + MERGE =====================
@@ -2247,8 +2260,8 @@ const IMG_PLACEHOLDER_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="curren
 // si falla, onerror la oculta y queda el placeholder neutro debajo en vez de una imagen rota.
 // Nombre del ad, linkeado a su preview en Ads Manager si tenemos el ad id. Si no, texto plano:
 // nunca un link roto.
-function adNameCell(adName) {
-  const url = metaAdUrl(adName);
+function adNameCell(adName, accountName) {
+  const url = metaAdUrl(adName, accountName);
   const name = escapeHtml(adName);
   if (!url) return name;
   return '<a class="ad-meta-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener"'
@@ -2264,8 +2277,9 @@ function thumbCell(r) {
   const u = escapeHtml(fresh);
   // Si tenemos el ad id, el thumbnail abre el ad en Ads Manager (lo útil al tocar un creativo).
   // Sin ad id se mantiene el comportamiento viejo: abrir la imagen en grande.
-  const href = escapeHtml(metaAdUrl(r.ad) || fresh);
-  return '<a href="' + href + '" target="_blank" rel="noopener" title="' + (metaAdUrl(r.ad) ? 'Abrir en Meta Ads Manager' : 'Ver imagen') + '"><div class="creative-thumb-wrap">'
+  const meta = metaAdUrl(r.ad, r.account);
+  const href = escapeHtml(meta || fresh);
+  return '<a href="' + href + '" target="_blank" rel="noopener" title="' + (meta ? 'Abrir en Meta Ads Manager' : 'Ver imagen') + '"><div class="creative-thumb-wrap">'
     + ph + '<img class="creative-thumb" src="' + u + '" alt="" loading="lazy" decoding="async" onerror="this.style.display=\'none\'"></div></a>';
 }
 
@@ -2295,7 +2309,7 @@ function renderCreativeTable(rows) {
       return '<td>' + metricCell(r[c.key], p, c.key, c.fmt, !!cmp) + '</td>';
     }).join('');
     return '<tr class="' + (r.ad === highlightedAd ? 'row-highlighted' : '') + '">'
-      + '<td>' + thumbCell(r) + '</td><td>' + adNameCell(r.ad) + '</td><td>' + escapeHtml(r.account) + '</td>'
+      + '<td>' + thumbCell(r) + '</td><td>' + adNameCell(r.ad, r.account) + '</td><td>' + escapeHtml(r.account) + '</td>'
       + numCells + '</tr>';
   }).join('');
 
