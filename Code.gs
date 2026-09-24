@@ -17,7 +17,10 @@ var META_HEADERS = ['Date', 'Account', 'Campaign', 'Ad Set', 'Ad', 'Spend', 'Imp
   'Link Clicks', 'Reach', 'Frequency', 'LP Views', 'Registrations', 'Schedules (Meta)', 'Video Views', 'Thumbnail URL'];
 var POSTHOG_HEADERS = ['Date', 'Ad', 'Sessions', 'Bounced Sessions'];
 var CREATIVES_SHEET = 'Creatives';
-var CREATIVES_HEADERS = ['Ad', 'Thumbnail URL'];
+// Ad ID + Account ID se guardan para poder linkear cada creativo a su preview en Ads Manager desde
+// el dashboard. Van acá y no en Meta_Raw porque esta tab se reescribe ENTERA cada día, así que se
+// llena sola en la próxima corrida -- en Meta_Raw habría que backfillear todo el histórico.
+var CREATIVES_HEADERS = ['Ad', 'Thumbnail URL', 'Ad ID', 'Account ID'];
 
 // ===================== ENTRY POINTS =====================
 
@@ -238,27 +241,37 @@ function syncCreatives() {
   META_ACCOUNTS.forEach(function (acc) {
     try {
       fetchAccountCreatives(acc, token).forEach(function (c) {
-        if (c.name && c.thumbnailUrl) { byName[c.name] = c.thumbnailUrl; count++; }
+        // se guarda aunque no haya thumbnail: el link a Meta sirve igual (ads borrados/sin imagen)
+        if (c.name) { byName[c.name] = c; count++; }
       });
     } catch (e) {
       Logger.log('syncCreatives ' + acc.name + ' FALLO, sigo con el resto: ' + e.message);
     }
   });
 
-  var rows = Object.keys(byName).map(function (name) { return [name, byName[name]]; });
+  var rows = Object.keys(byName).map(function (name) {
+    var c = byName[name];
+    return [name, c.thumbnailUrl || '', c.adId || '', c.accountId || ''];
+  });
   writeWholeSheet(CREATIVES_SHEET, CREATIVES_HEADERS, rows);
-  Logger.log('Creatives: ' + rows.length + ' ads con thumbnail (de ' + count + ' ads vistos en total).');
+  var conThumb = rows.filter(function (r) { return r[1]; }).length;
+  Logger.log('Creatives: ' + rows.length + ' ads (' + conThumb + ' con thumbnail), de ' + count + ' vistos.');
 }
 
 function fetchAccountCreatives(account, token) {
   var out = [];
   var url = 'https://graph.facebook.com/' + GRAPH_API_VERSION + '/' + account.id + '/ads'
-    + '?fields=' + encodeURIComponent('name,creative{thumbnail_url}')
+    + '?fields=' + encodeURIComponent('id,name,creative{thumbnail_url}')
     + '&limit=200&access_token=' + token;
   while (url) {
     var json = fetchJsonWithRetry(url, account.name);
     (json.data || []).forEach(function (ad) {
-      out.push({ name: ad.name || '', thumbnailUrl: (ad.creative && ad.creative.thumbnail_url) || '' });
+      out.push({
+        name: ad.name || '',
+        thumbnailUrl: (ad.creative && ad.creative.thumbnail_url) || '',
+        adId: ad.id || '',
+        accountId: String(account.id).replace(/^act_/, '') // Ads Manager espera el id sin el prefijo
+      });
     });
     url = json.paging && json.paging.next ? json.paging.next : null;
   }

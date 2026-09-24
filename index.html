@@ -329,6 +329,12 @@
   .cohort-stage-bar { height: 100%; border-radius: 4px; }
   .cohort-table-title { font-size: 13px; color: var(--text-secondary); margin: 22px 0 10px; }
 
+  /* Link del creativo a su preview en Ads Manager. La flechita marca que abre afuera; el nombre
+     de ad puede ser largo, así que la flecha no se separa del final del texto. */
+  .ad-meta-link { color: var(--text-primary); text-decoration: none; border-bottom: 1px dotted var(--text-muted); }
+  .ad-meta-link:hover { color: var(--series-1); border-bottom-color: var(--series-1); }
+  .ad-meta-ext { font-size: 10px; margin-left: 4px; opacity: 0.7; }
+
   .cohort-note {
     display: flex;
     align-items: flex-start;
@@ -1178,6 +1184,7 @@ let charts = {};
 let postHogStartDate = null; // primera fecha con sesiones de PostHog reales (ver caveat en Creative Performance)
 let ICLOSED_CONTACTS = []; // un elemento por contacto real de iClosed (deduplicado, no explotado por ad)
 let CREATIVE_THUMBS = new Map(); // ad name -> thumbnail URL fresca (tab Creatives, refrescada a diario por Apps Script)
+let CREATIVE_META = new Map();   // ad name -> { adId, accountId } del tab Creatives, para linkear a Ads Manager
 
 // ===================== THEME =====================
 // Checkbox "Dark mode" en los filtros pisa la preferencia del sistema (prefers-color-scheme)
@@ -1283,6 +1290,7 @@ function dataRows(table) {
 // mismos que ya usa el dashboard por fila), así que no hay regresión antes de crear la tab.
 function loadCreativeThumbs(table) {
   CREATIVE_THUMBS = new Map();
+  CREATIVE_META = new Map();
   if (!table || !table.cols) return;
   const labels = table.cols.map(c => (c && c.label) ? String(c.label).trim() : '');
   let adIdx = labels.indexOf('Ad');
@@ -1296,12 +1304,31 @@ function loadCreativeThumbs(table) {
     if (adIdx === -1 || urlIdx === -1) return; // no es la tab Creatives (o está vacía)
     rows = rows.slice(1);
   }
+  // Ad ID / Account ID son OPCIONALES: si la tab todavía no los tiene (hasta que corra syncCreatives
+  // con el Code.gs nuevo), simplemente no se arma el link y el resto sigue igual.
+  const adIdIdx = labels.indexOf('Ad ID');
+  const acctIdx = labels.indexOf('Account ID');
+
   rows.forEach(r => {
     if (!r.c) return;
     const ad = cellStr(r.c[adIdx]);
+    if (!ad) return;
     const url = cellStr(r.c[urlIdx]);
-    if (ad && url) CREATIVE_THUMBS.set(ad, url);
+    if (url) CREATIVE_THUMBS.set(ad, url);
+    const adId = adIdIdx >= 0 ? cellStr(r.c[adIdIdx]) : '';
+    const accountId = acctIdx >= 0 ? cellStr(r.c[acctIdx]) : '';
+    if (adId) CREATIVE_META.set(ad, { adId, accountId });
   });
+}
+
+// Link al ad dentro de Ads Manager (queda preseleccionado). Devuelve '' si todavía no tenemos el
+// ad id -- el ad puede ser viejo/borrado, o la tab Creatives aún no se re-sincronizó.
+function metaAdUrl(adName) {
+  const m = CREATIVE_META.get(adName);
+  if (!m || !m.adId) return '';
+  const acct = m.accountId ? 'act=' + encodeURIComponent(m.accountId) + '&' : '';
+  return 'https://adsmanager.facebook.com/adsmanager/manage/ads?' + acct
+    + 'selected_ad_ids=' + encodeURIComponent(m.adId);
 }
 
 // ===================== LOAD + MERGE =====================
@@ -2218,6 +2245,16 @@ const IMG_PLACEHOLDER_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="curren
 
 // El thumbnail de Meta es una URL de CDN temporal (expira -> 403). Si carga, se ve la imagen;
 // si falla, onerror la oculta y queda el placeholder neutro debajo en vez de una imagen rota.
+// Nombre del ad, linkeado a su preview en Ads Manager si tenemos el ad id. Si no, texto plano:
+// nunca un link roto.
+function adNameCell(adName) {
+  const url = metaAdUrl(adName);
+  const name = escapeHtml(adName);
+  if (!url) return name;
+  return '<a class="ad-meta-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener"'
+    + ' title="Abrir en Meta Ads Manager">' + name + '<span class="ad-meta-ext" aria-hidden="true">↗</span></a>';
+}
+
 function thumbCell(r) {
   const ph = '<span class="creative-thumb-ph">' + IMG_PLACEHOLDER_SVG + '</span>';
   // URL fresca del tab Creatives (refrescada a diario) tiene prioridad sobre la guardada por
@@ -2225,7 +2262,10 @@ function thumbCell(r) {
   const fresh = CREATIVE_THUMBS.get(r.ad) || r.thumbnailUrl;
   if (!fresh) return '<div class="creative-thumb-wrap">' + ph + '</div>';
   const u = escapeHtml(fresh);
-  return '<a href="' + u + '" target="_blank" rel="noopener"><div class="creative-thumb-wrap">'
+  // Si tenemos el ad id, el thumbnail abre el ad en Ads Manager (lo útil al tocar un creativo).
+  // Sin ad id se mantiene el comportamiento viejo: abrir la imagen en grande.
+  const href = escapeHtml(metaAdUrl(r.ad) || fresh);
+  return '<a href="' + href + '" target="_blank" rel="noopener" title="' + (metaAdUrl(r.ad) ? 'Abrir en Meta Ads Manager' : 'Ver imagen') + '"><div class="creative-thumb-wrap">'
     + ph + '<img class="creative-thumb" src="' + u + '" alt="" loading="lazy" decoding="async" onerror="this.style.display=\'none\'"></div></a>';
 }
 
@@ -2255,7 +2295,7 @@ function renderCreativeTable(rows) {
       return '<td>' + metricCell(r[c.key], p, c.key, c.fmt, !!cmp) + '</td>';
     }).join('');
     return '<tr class="' + (r.ad === highlightedAd ? 'row-highlighted' : '') + '">'
-      + '<td>' + thumbCell(r) + '</td><td>' + escapeHtml(r.ad) + '</td><td>' + escapeHtml(r.account) + '</td>'
+      + '<td>' + thumbCell(r) + '</td><td>' + adNameCell(r.ad) + '</td><td>' + escapeHtml(r.account) + '</td>'
       + numCells + '</tr>';
   }).join('');
 
