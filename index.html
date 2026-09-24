@@ -1340,7 +1340,11 @@ function metaAdUrl(adName, accountName) {
   if (!m || !m.adId) return '';
   const acct = META_ACCOUNT_IDS[accountName] || m.accountId;
   if (!acct) return '';
-  return 'https://adsmanager.facebook.com/adsmanager/manage/ads?act=' + encodeURIComponent(acct)
+  // Formato /manage/ads/edit tomado de lo que devuelve la propia API de Meta (campo
+  // ads_manager_url de ads_get_ad_preview). Abre el ad con su panel de preview; la variante sin
+  // /edit solo lo dejaba "seleccionado" entre los 1.525 de la cuenta, así que no se veía nada.
+  // No se usa el preview_url de la API porque lleva un token que expira en horas.
+  return 'https://www.facebook.com/adsmanager/manage/ads/edit?act=' + encodeURIComponent(acct)
     + '&selected_ad_ids=' + encodeURIComponent(m.adId);
 }
 
