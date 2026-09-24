@@ -1308,6 +1308,7 @@ function loadCreativeThumbs(table) {
   // con el Code.gs nuevo), simplemente no se arma el link y el resto sigue igual.
   const adIdIdx = labels.indexOf('Ad ID');
   const acctIdx = labels.indexOf('Account ID');
+  const previewIdx = labels.indexOf('Preview URL');
 
   rows.forEach(r => {
     if (!r.c) return;
@@ -1317,7 +1318,8 @@ function loadCreativeThumbs(table) {
     if (url) CREATIVE_THUMBS.set(ad, url);
     const adId = adIdIdx >= 0 ? cellStr(r.c[adIdIdx]) : '';
     const accountId = acctIdx >= 0 ? cellStr(r.c[acctIdx]) : '';
-    if (adId) CREATIVE_META.set(ad, { adId, accountId });
+    const previewUrl = previewIdx >= 0 ? cellStr(r.c[previewIdx]) : '';
+    if (adId || previewUrl) CREATIVE_META.set(ad, { adId, accountId, previewUrl });
   });
 }
 
@@ -1337,7 +1339,12 @@ const META_ACCOUNT_IDS = {
 // equivocada, que es justo lo que pasaba.
 function metaAdUrl(adName, accountName) {
   const m = CREATIVE_META.get(adName);
-  if (!m || !m.adId) return '';
+  if (!m) return '';
+  // El preview renderizado por Meta es lo que se quiere ver al tocar un creativo. Su token es de
+  // vida corta, así que syncCreatives lo regenera a diario; si falta (ad viejo, o falló la
+  // generación) se cae al link de Ads Manager, que es estable.
+  if (m.previewUrl) return m.previewUrl;
+  if (!m.adId) return '';
   const acct = META_ACCOUNT_IDS[accountName] || m.accountId;
   if (!acct) return '';
   // Formato /manage/ads/edit tomado de lo que devuelve la propia API de Meta (campo
@@ -2282,8 +2289,10 @@ function thumbCell(r) {
   // Si tenemos el ad id, el thumbnail abre el ad en Ads Manager (lo útil al tocar un creativo).
   // Sin ad id se mantiene el comportamiento viejo: abrir la imagen en grande.
   const meta = metaAdUrl(r.ad, r.account);
+  const esPreview = !!(CREATIVE_META.get(r.ad) || {}).previewUrl;
   const href = escapeHtml(meta || fresh);
-  return '<a href="' + href + '" target="_blank" rel="noopener" title="' + (meta ? 'Abrir en Meta Ads Manager' : 'Ver imagen') + '"><div class="creative-thumb-wrap">'
+  const title = meta ? (esPreview ? 'Ver el preview del ad en Meta' : 'Abrir en Meta Ads Manager') : 'Ver imagen';
+  return '<a href="' + href + '" target="_blank" rel="noopener" title="' + title + '"><div class="creative-thumb-wrap">'
     + ph + '<img class="creative-thumb" src="' + u + '" alt="" loading="lazy" decoding="async" onerror="this.style.display=\'none\'"></div></a>';
 }
 

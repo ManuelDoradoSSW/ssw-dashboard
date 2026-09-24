@@ -20,7 +20,13 @@ var CREATIVES_SHEET = 'Creatives';
 // Ad ID + Account ID se guardan para poder linkear cada creativo a su preview en Ads Manager desde
 // el dashboard. Van acá y no en Meta_Raw porque esta tab se reescribe ENTERA cada día, así que se
 // llena sola en la próxima corrida -- en Meta_Raw habría que backfillear todo el histórico.
-var CREATIVES_HEADERS = ['Ad', 'Thumbnail URL', 'Ad ID', 'Account ID'];
+var CREATIVES_HEADERS = ['Ad', 'Thumbnail URL', 'Ad ID', 'Account ID', 'Preview URL'];
+// El preview de Meta lleva un token de vida corta, así que se regenera en CADA corrida (la tab se
+// reescribe entera a diario). Solo para ads con spend reciente: generarlo para los ~800 ads
+// históricos sería 800 llamadas por día para links que nadie abre, y no entra en los 6 min de
+// Apps Script. Si un preview falla o el ad es viejo, el dashboard cae solo al link de Ads Manager.
+var PREVIEW_SPEND_DAYS = 30;   // ventana para decidir qué ads merecen preview
+var PREVIEW_MAX_ADS = 250;     // tope duro, para que una corrida no se dispare
 
 // ===================== ENTRY POINTS =====================
 
@@ -249,13 +255,61 @@ function syncCreatives() {
     }
   });
 
+  // preview solo para los ads que el dashboard muestra (spend reciente), y con tope
+  var wanted = recentlySpendingAdNames(PREVIEW_SPEND_DAYS);
+  var previews = {}, hechos = 0, fallidos = 0;
+  Object.keys(byName).forEach(function (name) {
+    if (!wanted[name] || hechos >= PREVIEW_MAX_ADS) return;
+    var adId = byName[name].adId;
+    if (!adId) return;
+    try {
+      var u = fetchAdPreviewUrl(adId, token);
+      if (u) { previews[name] = u; hechos++; } else { fallidos++; }
+    } catch (e) {
+      fallidos++; // sin preview el dashboard cae al link de Ads Manager, no se rompe nada
+    }
+    Utilities.sleep(120);
+  });
+
   var rows = Object.keys(byName).map(function (name) {
     var c = byName[name];
-    return [name, c.thumbnailUrl || '', c.adId || '', c.accountId || ''];
+    return [name, c.thumbnailUrl || '', c.adId || '', c.accountId || '', previews[name] || ''];
   });
   writeWholeSheet(CREATIVES_SHEET, CREATIVES_HEADERS, rows);
   var conThumb = rows.filter(function (r) { return r[1]; }).length;
   Logger.log('Creatives: ' + rows.length + ' ads (' + conThumb + ' con thumbnail), de ' + count + ' vistos.');
+  Logger.log('Previews: ' + hechos + ' generados, ' + fallidos + ' fallaron, sobre ' + Object.keys(wanted).length + ' ads con spend en ' + PREVIEW_SPEND_DAYS + 'd.');
+}
+
+// Nombres de ads con spend > 0 en los últimos N días, leídos de Meta_Raw (ya está sincronizada).
+// Sirve para generar preview solo de lo que el dashboard realmente muestra.
+function recentlySpendingAdNames(days) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(META_SHEET);
+  if (!sheet) return {};
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return {};
+  var since = daysAgo(days);
+  var data = sheet.getRange(2, 1, lastRow - 1, 6).getValues(); // Date..Spend
+  var out = {};
+  data.forEach(function (row) {
+    if (formatDate(row[0]) < since) return;
+    if (Number(row[5] || 0) <= 0) return;
+    if (row[4]) out[String(row[4])] = true;
+  });
+  return out;
+}
+
+// Preview del ad renderizado por Meta. Devuelve la URL del iframe, o '' si falla.
+function fetchAdPreviewUrl(adId, token) {
+  var url = 'https://graph.facebook.com/' + GRAPH_API_VERSION + '/' + adId + '/previews'
+    + '?ad_format=MOBILE_FEED_STANDARD&access_token=' + token;
+  var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  if (resp.getResponseCode() !== 200) return '';
+  var json = JSON.parse(resp.getContentText());
+  var body = (json.data && json.data[0] && json.data[0].body) || '';
+  var m = body.match(/src="([^"]+)"/);
+  if (!m) return '';
+  return m[1].replace(/&amp;/g, '&'); // el iframe viene con las & escapadas como HTML
 }
 
 function fetchAccountCreatives(account, token) {
