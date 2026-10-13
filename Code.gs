@@ -454,7 +454,13 @@ function backfillIClosedAuto(sinceStr) {
 // Si la tab no existe, devuelve {} y el sync sigue funcionando igual que antes.
 function readIClosedUtmPatch() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ICLOSED_UTM_PATCH_SHEET);
-  if (!sheet) return {};
+  if (!sheet) {
+    // Se avisa fuerte: antes salía en silencio, así que el patch podía estar dormido meses sin
+    // que nadie lo notara mientras se rellenaban UTMs a mano.
+    Logger.log('AVISO: no existe la tab "' + ICLOSED_UTM_PATCH_SHEET + '". El backfill de UTMs por '
+      + 'email NO se está aplicando. Creala y pegá ahí el export de iClosed.');
+    return {};
+  }
   var lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn();
   if (lastRow < 2 || lastCol < 1) return {};
   var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
@@ -494,13 +500,16 @@ function applyUtmPatchTo(byId) {
   var n = 0;
   Object.keys(byId).forEach(function (id) {
     var row = byId[id];
-    if (row['Campaign'] || row['Ad Set'] || row['Ad']) return; // ya atribuida, no se toca
+    // fill-if-empty CAMPO POR CAMPO: antes exigía que los 3 estuvieran vacíos, así que una fila
+    // con atribución parcial (ej. solo Ad Set) no se completaba nunca.
+    if (row['Campaign'] && row['Ad Set'] && row['Ad']) return;
     var p = patch[String(row['Email'] || '').trim().toLowerCase()];
     if (!p) return;
-    row['Campaign'] = p.campaign;
-    row['Ad Set'] = p.medium;
-    row['Ad'] = p.content;
-    n++;
+    var toco = false;
+    if (!row['Campaign'] && p.campaign) { row['Campaign'] = p.campaign; toco = true; }
+    if (!row['Ad Set'] && p.medium) { row['Ad Set'] = p.medium; toco = true; }
+    if (!row['Ad'] && p.content) { row['Ad'] = p.content; toco = true; }
+    if (toco) n++;
   });
   Logger.log('iClosed_UTM_patch: ' + n + ' filas rellenadas por email');
   return n;
@@ -548,7 +557,10 @@ function runIClosedAuto(since, until) {
       // UTM: fuente PRINCIPAL = el utm de la call agendada (eventCalls[].utm), que es de donde
       // iClosed arma sus columnas de UTM. El referrerUrl del contacto a veces viene sin UTMs
       // (ej. llegó a la booking page sin params) y quedaba como "orgánico". Fallback: referrerUrl.
-      var utm = utmFromEventCalls(c.id, apiKey) || parseUtmFromUrl(detail.referrerUrl);
+      // Las dos fuentes se COMBINAN campo por campo. Antes era `eventCalls || referrerUrl`: si
+      // eventCalls devolvía algo parcial (ej. solo utm_content) el || cortaba ahí y el referrerUrl
+      // no se miraba nunca, aunque tuviera campaign y medium.
+      var utm = mergeUtm(utmFromEventCalls(c.id, apiKey), parseUtmFromUrl(detail.referrerUrl));
       // Event = los events (calls) asociados al contacto, de ContactEvents del item de lista. Es
       // persistente y lista TODAS las calls (Call A/B). /v1/eventCalls traía muy pocas (bug).
       var eventName = contactEventNames(c.ContactEvents);
@@ -731,17 +743,34 @@ function fetchIClosedJson(url, apiKey, label) {
   throw new Error('iClosed ' + label + ' fallo tras 4 intentos -- ' + lastInfo);
 }
 
+// Acumula los utm a través de TODAS las calls del contacto, campo por campo (gana el primer valor
+// no vacío de cada uno). Antes cortaba en la primera call que tuviera CUALQUIERA de los tres, así
+// que una call con solo utm_content le ganaba a una posterior que los traía completos.
+// Combina fuentes de utm en orden de prioridad: gana el primer valor no vacío de cada campo.
+function mergeUtm() {
+  var out = { campaign: '', medium: '', content: '' };
+  for (var i = 0; i < arguments.length; i++) {
+    var u = arguments[i];
+    if (!u) continue;
+    if (!out.campaign && u.campaign) out.campaign = u.campaign;
+    if (!out.medium && u.medium) out.medium = u.medium;
+    if (!out.content && u.content) out.content = u.content;
+  }
+  return out;
+}
+
 function utmFromEventCalls(contactId, apiKey) {
   var url = ICLOSED_BASE_URL + '/v1/eventCalls?contactId=' + contactId + '&eventType=ALL&limit=20&page=0';
   var calls = (fetchIClosedJson(url, apiKey, 'eventCalls ' + contactId).data || {}).eventCalls || [];
-  for (var i = 0; i < calls.length; i++) {
+  var out = { campaign: '', medium: '', content: '' };
+  calls.forEach(function (call) {
     var m = {};
-    (calls[i].utm || []).forEach(function (u) { if (u && u.utmKey && !(u.utmKey in m)) m[u.utmKey] = u.utmValue; });
-    if (m['utm_campaign'] || m['utm_medium'] || m['utm_content']) {
-      return { campaign: m['utm_campaign'] || '', medium: m['utm_medium'] || '', content: m['utm_content'] || '' };
-    }
-  }
-  return null;
+    (call.utm || []).forEach(function (u) { if (u && u.utmKey && !(u.utmKey in m)) m[u.utmKey] = u.utmValue; });
+    if (!out.campaign && m['utm_campaign']) out.campaign = m['utm_campaign'];
+    if (!out.medium && m['utm_medium']) out.medium = m['utm_medium'];
+    if (!out.content && m['utm_content']) out.content = m['utm_content'];
+  });
+  return out;
 }
 
 function readSheetAsObjects(sheetName, headers) {
