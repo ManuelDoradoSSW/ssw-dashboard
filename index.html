@@ -887,6 +887,7 @@
             <th>Creative</th>
             <th data-key="ad">Ad</th>
             <th data-key="account">Account</th>
+            <th data-key="audience" title="Sale del nombre del ad set (token que sigue a ADV+). Un ad que corre en varios ad sets puede tener más de una.">Audience</th>
             <th data-key="spend">Spend</th>
             <th data-key="impressions">Impressions</th>
             <th data-key="clicks">Link Clicks</th>
@@ -1532,6 +1533,37 @@ function decodePlusEncoded(s) {
 // no hay forma de distinguirlo de un espacio real. Por eso la clave colapsa + y espacio al mismo
 // caracter y baja todo a minúscula: es ambiguo a propósito. El nombre REAL de Meta se devuelve
 // aparte (los crosschecks guardan norm -> nombre de Meta), así que la UI nunca muestra la clave.
+// La audiencia no viene como campo de Meta: está codificada en el nombre del ad set. Hay DOS
+// convenciones conviviendo, y el parser tiene que aguantar las dos:
+//   SSW_ADV+_ACQ.COM_REMAKEADS_OLD ACCOUNT_2026-07-31   (guion bajo, la actual)
+//   ADV+ | INTEREST | APR 26'                            (pipes, la vieja)
+// Además el "+" a veces llega como espacio ("SSW_ADV _INTEREST_...") en nombres que pasaron por
+// decodificación de UTM. Se toma el primer token con sentido después del marcador ADV+/NOADV+,
+// salteando tokens de versión (V2) y sufijos de duplicado (" - Copy 3").
+//
+// Si el nombre no sigue ninguna convención no se devuelve nada y la celda muestra "—": inventar
+// una audiencia sería peor que admitir que ese ad set no la codifica. Hoy son 21 ad sets
+// ($2.9k de spend histórico, ~1%); en los últimos 30 días la cobertura es total.
+const AUDIENCE_LABELS = { RTG: 'Retargeting', INTEREST: 'Interest', INTERESTS: 'Interest', BROAD: 'Broad' };
+
+function audienceFromAdset(adsetName) {
+  if (!adsetName) return '';
+  const m = /(?:^|[_|\s])(?:NO)?ADV[+\s]\s*[_|]?\s*(.+)$/i.exec(adsetName);
+  if (!m) return '';
+  const toks = m[1].split(/[_|]/).map(t => t.trim()).filter(Boolean);
+  for (const raw of toks) {
+    const tok = raw
+      .replace(/\s*-\s*Copy(\s+\d+)?$/i, '')  // "INTERESTS - Copy 3" -> "INTERESTS"
+      .replace(/^['"]|['"]$/g, '')
+      .replace(/^'?B'?\s+/i, '')                // "'B' INTERESTS" -> "INTERESTS"
+      .trim();
+    if (!tok || tok.length < 3) continue;
+    if (/^V\d+$/i.test(tok)) continue;          // token de versión, no es audiencia
+    return AUDIENCE_LABELS[tok.toUpperCase()] || tok;
+  }
+  return '';
+}
+
 function normalizeName(s) {
   return String(decodePlusEncoded(String(s || '')) || '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
@@ -1923,14 +1955,16 @@ function sumRows(rows) {
 function aggregateByAd(rows) {
   const map = new Map();
   rows.forEach(r => {
-    if (!map.has(r.ad)) map.set(r.ad, { ad: r.ad, account: r.account, thumbnailUrl: '', rows: [] });
+    if (!map.has(r.ad)) map.set(r.ad, { ad: r.ad, account: r.account, thumbnailUrl: '', audiences: new Set(), rows: [] });
     const g = map.get(r.ad);
     if (!g.thumbnailUrl && r.thumbnailUrl) g.thumbnailUrl = r.thumbnailUrl;
+    const aud = audienceFromAdset(r.adset);
+    if (aud) g.audiences.add(aud);
     g.rows.push(r);
   });
   return Array.from(map.values()).map(g => {
     const s = sumRows(g.rows);
-    return Object.assign({ ad: g.ad, account: g.account, thumbnailUrl: g.thumbnailUrl }, s, {
+    return Object.assign({ ad: g.ad, account: g.account, thumbnailUrl: g.thumbnailUrl, audience: Array.from(g.audiences).sort().join(', ') }, s, {
       ctr: safeDiv(s.clicks, s.impressions),
       cpc: safeDiv(s.spend, s.clicks),
       clicktolpv: safeDiv(s.lpViews, s.clicks),
@@ -2323,6 +2357,7 @@ function renderCreativeTable(rows) {
     }).join('');
     return '<tr class="' + (r.ad === highlightedAd ? 'row-highlighted' : '') + '">'
       + '<td>' + thumbCell(r) + '</td><td>' + adNameCell(r.ad, r.account) + '</td><td>' + escapeHtml(r.account) + '</td>'
+      + '<td>' + (escapeHtml(r.audience) || '<span class="caveat">—</span>') + '</td>'
       + numCells + '</tr>';
   }).join('');
 
